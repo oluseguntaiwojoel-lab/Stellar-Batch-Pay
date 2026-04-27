@@ -485,7 +485,7 @@ impl BatchVestingContract {
             .extend_ttl(BUMP_THRESHOLD, BUMP_EXTEND_TO);
     }
 
-    fn extend_ttl_vesting_entry(env: &Env, recipient: &Address, idx: u32) {
+    fn extend_ttl_vesting(env: &Env, recipient: &Address, idx: u32) {
         if env.storage().persistent().has(&DataKey::VestingEntry(recipient.clone(), idx)) {
             env.storage().persistent().extend_ttl(
                 &DataKey::VestingEntry(recipient.clone(), idx),
@@ -493,9 +493,6 @@ impl BatchVestingContract {
                 BUMP_EXTEND_TO,
             );
         }
-    }
-
-    fn extend_ttl_vesting_count(env: &Env, recipient: &Address) {
         if env.storage().persistent().has(&DataKey::VestingCount(recipient.clone())) {
             env.storage().persistent().extend_ttl(
                 &DataKey::VestingCount(recipient.clone()),
@@ -503,11 +500,6 @@ impl BatchVestingContract {
                 BUMP_EXTEND_TO,
             );
         }
-    }
-
-    fn extend_ttl_vesting(env: &Env, recipient: &Address, idx: u32) {
-        Self::extend_ttl_vesting_entry(env, recipient, idx);
-        Self::extend_ttl_vesting_count(env, recipient);
     }
 }
 
@@ -1138,20 +1130,12 @@ impl BatchVestingContract {
         Self::extend_ttl_vesting(&env, &recipient, index);
     }
 
-    /// Maintenance function to bump a bounded page of recipient vesting schedules.
-    pub fn maintenance(env: Env, recipient: Address, start_index: u32, limit: u32) {
+    /// Maintenance function to bump everything relevant to a recipient.
+    pub fn maintenance(env: Env, recipient: Address) {
         Self::bump_instance_ttl(env.clone());
         let count = Self::get_vesting_count(&env, &recipient);
-
-        if limit == 0 || start_index >= count {
-            return;
-        }
-
-        Self::extend_ttl_vesting_count(&env, &recipient);
-
-        let end_index = start_index.saturating_add(limit).min(count);
-        for i in start_index..end_index {
-            Self::extend_ttl_vesting_entry(&env, &recipient, i);
+        for i in 0..count {
+            Self::extend_ttl_vesting(&env, &recipient, i);
         }
     }
 }
