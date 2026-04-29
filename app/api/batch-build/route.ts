@@ -29,6 +29,7 @@ import {
 import type { PaymentInstruction } from "@/lib/stellar/types";
 import { getRecommendedFee } from "@/lib/stellar/fee-service";
 import { MAX_UPLOAD_ROWS } from "@/lib/stellar/parser";
+import { applyRateLimit, setRateLimitHeaders } from "@/lib/api-rate-limit";
 
 interface RequestBody {
   payments: PaymentInstruction[];
@@ -39,6 +40,9 @@ interface RequestBody {
 const MAX_OPS = 100;
 
 export async function POST(request: NextRequest) {
+  const rate = applyRateLimit(request, "batch-build");
+  if (rate.blocked) return rate.response!;
+
   try {
     const body = (await request.json()) as RequestBody;
     const { payments, network, publicKey } = body;
@@ -175,20 +179,20 @@ export async function POST(request: NextRequest) {
       sourceAccount.incrementSequenceNumber();
     }
 
-    return safeJsonResponse({
+    return setRateLimitHeaders(safeJsonResponse({
       xdrs,
       batchCount: batches.length,
       network,
       publicKey,
-    });
+    }), rate);
   } catch (error) {
     console.error("Batch build error:", error);
-    return safeJsonResponse(
+    return setRateLimitHeaders(safeJsonResponse(
       {
         error:
           error instanceof Error ? error.message : "Internal server error",
       },
       { status: 500 },
-    );
+    ), rate);
   }
 }

@@ -16,6 +16,7 @@ import { safeJsonResponse } from "@/lib/safe-json";
 import { createJob } from "@/lib/job-store";
 import { processJobInBackground } from "@/lib/stellar/batch-worker";
 import type { PaymentInstruction } from "@/lib/stellar/types";
+import { applyRateLimit, setRateLimitHeaders } from "@/lib/api-rate-limit";
 
 interface RequestBody {
   payments?: PaymentInstruction[];
@@ -25,6 +26,9 @@ interface RequestBody {
 }
 
 export async function POST(request: NextRequest) {
+  const rate = applyRateLimit(request, "batch-submit");
+  if (rate.blocked) return rate.response!;
+
   try {
     // Parse request body
     const body = (await request.json()) as RequestBody;
@@ -60,7 +64,7 @@ export async function POST(request: NextRequest) {
       const jobId = createJob([], network, signedTransactions);
       void processJobInBackground(jobId, [], network, undefined, signedTransactions);
 
-      return safeJsonResponse(
+      return setRateLimitHeaders(safeJsonResponse(
         {
           jobId,
           status: "queued",
@@ -71,7 +75,7 @@ export async function POST(request: NextRequest) {
             " for progress.",
         },
         { status: 202 },
-      );
+      ), rate);
     }
 
     // Mode 2: Server-side signing (legacy, requires STELLAR_SECRET_KEY)
@@ -125,7 +129,7 @@ export async function POST(request: NextRequest) {
     void processJobInBackground(jobId, payments, network, secretKey);
 
     // Return 202 Accepted with the job ID for polling
-    return safeJsonResponse(
+    return setRateLimitHeaders(safeJsonResponse(
       {
         jobId,
         status: "queued",
@@ -136,14 +140,14 @@ export async function POST(request: NextRequest) {
           " for progress.",
       },
       { status: 202 },
-    );
+    ), rate);
   } catch (error) {
     console.error("Batch submission error:", error);
-    return safeJsonResponse(
+    return setRateLimitHeaders(safeJsonResponse(
       {
         error: error instanceof Error ? error.message : "Internal server error",
       },
       { status: 500 },
-    );
+    ), rate);
   }
 }

@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { registerWebhook, getWebhooks, unregisterWebhook } from "@/lib/webhooks";
 import { safeJsonResponse } from "@/lib/safe-json";
+import { applyRateLimit, setRateLimitHeaders } from "@/lib/api-rate-limit";
 
 export async function GET() {
   return safeJsonResponse({ webhooks: getWebhooks() });
 }
 
 export async function POST(request: NextRequest) {
+  const rate = applyRateLimit(request, "webhook-register");
+  if (rate.blocked) return rate.response!;
+
   try {
     const { url, events, secret } = await request.json();
 
@@ -15,9 +19,12 @@ export async function POST(request: NextRequest) {
     }
 
     const webhook = registerWebhook(url, events, secret);
-    return safeJsonResponse({ message: "Webhook registered successfully", webhook }, { status: 201 });
+    return setRateLimitHeaders(
+      safeJsonResponse({ message: "Webhook registered successfully", webhook }, { status: 201 }),
+      rate,
+    );
   } catch (error) {
-    return safeJsonResponse({ error: "Internal server error" }, { status: 500 });
+    return setRateLimitHeaders(safeJsonResponse({ error: "Internal server error" }, { status: 500 }), rate);
   }
 }
 

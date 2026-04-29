@@ -12,6 +12,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { TransactionBuilder, Horizon, Networks } from "stellar-sdk";
 import { safeJsonResponse } from "@/lib/safe-json";
+import { applyRateLimit, setRateLimitHeaders } from "@/lib/api-rate-limit";
 
 interface RequestBody {
     signedXdr: string;
@@ -45,6 +46,9 @@ function isInsufficientFeeError(error: unknown): boolean {
 }
 
 export async function POST(request: NextRequest) {
+    const rate = applyRateLimit(request, "batch-submit-signed");
+    if (rate.blocked) return rate.response!;
+
     try {
         const body = (await request.json()) as RequestBody;
         const { signedXdr, network } = body;
@@ -84,11 +88,11 @@ export async function POST(request: NextRequest) {
         try {
             const result = await server.submitTransaction(transaction);
 
-            return safeJsonResponse({
+            return setRateLimitHeaders(safeJsonResponse({
                 success: true,
                 hash: result.hash,
                 ledger: result.ledger,
-            });
+            }), rate);
         } catch (submissionError: unknown) {
             // Check if this is a low-fee error and provide fee guidance
             if (isInsufficientFeeError(submissionError)) {
@@ -96,7 +100,7 @@ export async function POST(request: NextRequest) {
                 const currentBaseFee = Number(feeStats.last_ledger_base_fee || "100");
                 const estimatedFee = (currentBaseFee * 300).toString(); // 300 ops is typical batch size
 
-                return safeJsonResponse(
+                return setRateLimitHeaders(safeJsonResponse(
                     {
                         success: false,
                         error: "Transaction fees are insufficient for current network conditions",
@@ -106,7 +110,7 @@ export async function POST(request: NextRequest) {
                         guidance: `Network base fee is ${currentBaseFee} stroops. Consider retrying with a fee of at least ${estimatedFee} stroops.`,
                     },
                     { status: 400 },
-                );
+                ), rate);
             }
 
             throw submissionError;
@@ -121,7 +125,7 @@ export async function POST(request: NextRequest) {
                     .response?.data?.extras?.result_codes
                 : undefined;
 
-        return safeJsonResponse(
+        return setRateLimitHeaders(safeJsonResponse(
             {
                 success: false,
                 error:
@@ -129,6 +133,6 @@ export async function POST(request: NextRequest) {
                 resultCodes: horizonExtras,
             },
             { status: 400 },
-        );
+        ), rate);
     }
 }
