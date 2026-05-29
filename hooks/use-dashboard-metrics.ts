@@ -7,6 +7,10 @@ export interface DashboardMetrics {
   totalAmountSent: string;
   successRate: string;
   activeBatches: number;
+  totalPaymentsTrend?: string;
+  totalAmountSentTrend?: string;
+  successRateTrend?: string;
+  activeBatchesTrend?: string;
 }
 
 export function useDashboardMetrics(publicKey: string | null, network: "testnet" | "mainnet") {
