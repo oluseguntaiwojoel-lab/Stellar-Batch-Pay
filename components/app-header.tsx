@@ -15,13 +15,52 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb"
 import { cn } from "@/lib/utils"
+import { useWallet } from "@/contexts/WalletContext"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 
 export function AppHeader() {
   const pathname = usePathname()
   const isDashboard = pathname === "/dashboard"
+  const { expectedNetwork, selectNetwork } = useWallet()
+  const [showMainnetWarning, setShowMainnetWarning] = React.useState(false)
+  const [pendingNetwork, setPendingNetwork] = React.useState<"mainnet" | "testnet" | null>(null)
 
   // Simple breadcrumb logic based on path
   const pathsegments = pathname.split("/").filter(Boolean)
+
+  const handleNetworkSelect = (network: "mainnet" | "testnet") => {
+    if (network === "mainnet") {
+      setPendingNetwork(network)
+      setShowMainnetWarning(true)
+    } else {
+      selectNetwork(network)
+    }
+  }
+
+  const confirmMainnetSwitch = () => {
+    if (pendingNetwork) {
+      selectNetwork(pendingNetwork)
+      setShowMainnetWarning(false)
+      setPendingNetwork(null)
+    }
+  }
+
+  const cancelMainnetSwitch = () => {
+    setShowMainnetWarning(false)
+    setPendingNetwork(null)
+  }
+
+  const getNetworkColor = (network: string) => {
+    return network === "mainnet" ? "bg-red-500/20 text-red-400" : "bg-blue-500/20 text-blue-400"
+  }
   
   return (
     <header className="sticky top-0 z-30 flex h-[75px] w-full items-center justify-between border-b border-[#1F2937] bg-[#121827] px-4 md:px-8 transition-all duration-200">
@@ -91,10 +130,51 @@ export function AppHeader() {
           </span>
         </button>
 
-        <div className="flex h-9 items-center rounded-full border border-[#1F2937] bg-[#1F293780]/30 px-4 py-1">
-          <div className="mr-2 h-2 w-2 rounded-full bg-[#00D98B]"></div>
-          <span className="text-sm font-medium text-white">Mainnet</span>
-        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className={cn("flex h-9 items-center rounded-full border border-[#1F2937] px-4 py-1 cursor-pointer hover:border-[#3a4a50] transition-colors", getNetworkColor(expectedNetwork))}>
+              <div className="mr-2 h-2 w-2 rounded-full bg-current"></div>
+              <span className="text-sm font-medium capitalize">{expectedNetwork}</span>
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="bg-[#1F2937] border-[#2d3a40]">
+            <DropdownMenuLabel className="text-gray-400">Select Network</DropdownMenuLabel>
+            <DropdownMenuSeparator className="bg-[#2d3a40]" />
+            <DropdownMenuItem
+              onClick={() => handleNetworkSelect("testnet")}
+              className={cn("cursor-pointer text-blue-400", expectedNetwork === "testnet" && "bg-blue-500/20")}
+            >
+              <span>Testnet</span>
+              {expectedNetwork === "testnet" && <span className="ml-auto text-blue-400">✓</span>}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => handleNetworkSelect("mainnet")}
+              className={cn("cursor-pointer text-red-400", expectedNetwork === "mainnet" && "bg-red-500/20")}
+            >
+              <span>Mainnet</span>
+              {expectedNetwork === "mainnet" && <span className="ml-auto text-red-400">✓</span>}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <AlertDialog open={showMainnetWarning} onOpenChange={setShowMainnetWarning}>
+          <AlertDialogContent className="bg-[#1F2937] border-[#2d3a40]">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="text-white">Switch to Mainnet?</AlertDialogTitle>
+              <AlertDialogDescription className="text-gray-400">
+                You are about to switch to the Mainnet. This will affect all transactions you submit. Make sure you have sufficient balance before proceeding.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="flex justify-end gap-3">
+              <AlertDialogCancel onClick={cancelMainnetSwitch} className="bg-[#2d3a40] text-gray-300 border-[#3a4a50] hover:bg-[#3a4a50]">
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction onClick={confirmMainnetSwitch} className="bg-red-600 hover:bg-red-700 text-white">
+                Switch to Mainnet
+              </AlertDialogAction>
+            </div>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </header>
   )

@@ -1,6 +1,5 @@
 "use client";
 
-import { motion } from "framer-motion";
 import { HistoryFilterBar } from "@/components/dashboard/HistoryFilterBar";
 import { HistoryTable } from "@/components/dashboard/HistoryTable";
 import { Pagination } from "@/components/dashboard/Pagination";

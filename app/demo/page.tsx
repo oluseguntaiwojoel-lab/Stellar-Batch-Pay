@@ -1,11 +1,10 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { FileUpload } from "@/components/file-upload";
 import { BatchSummary } from "@/components/batch-summary";
 import { ResultsDisplay } from "@/components/results-display";
-import { JobProgress } from "@/components/job-progress";
 import { ConnectWalletButton } from "@/components/connect-wallet-button";
 import { useFreighter } from "@/hooks/use-freighter";
 import { useToast } from "@/components/ui/use-toast";

@@ -4,31 +4,33 @@ import { useState, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { 
-  UserPlus, 
-  Trash2, 
-  Edit2, 
-  Download, 
-  Upload, 
-  Search, 
-  User, 
-  Copy, 
-  Check, 
+import {
+  UserPlus,
+  Trash2,
+  Edit2,
+  Download,
+  Upload,
+  Search,
+  User,
+  Copy,
+  Check,
   X,
   ExternalLink
 } from "lucide-react";
 import { useAddressBook, Contact } from "@/hooks/use-address-book";
 import { toast } from "sonner";
+import { useWallet } from "@/contexts/WalletContext";
 
 export function AddressBook() {
-  const { 
-    contacts, 
-    addContact, 
-    updateContact, 
-    deleteContact, 
-    exportContacts, 
-    importContacts 
+  const {
+    contacts,
+    addContact,
+    updateContact,
+    deleteContact,
+    exportContacts,
+    importContacts
   } = useAddressBook();
+  const { expectedNetwork } = useWallet();
 
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -233,7 +235,7 @@ export function AddressBook() {
                           {copiedId === contact.id ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
                         </button>
                         <a
-                          href={`https://stellar.expert/explorer/testnet/account/${contact.address}`}
+                          href={`https://stellar.expert/explorer/${expectedNetwork}/account/${contact.address}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="p-1 hover:text-emerald-500 transition-colors opacity-0 group-hover:opacity-100"

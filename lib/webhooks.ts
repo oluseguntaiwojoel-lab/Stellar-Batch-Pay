@@ -1,4 +1,3 @@
-import { safeJsonResponse } from "./safe-json";
 import crypto from "crypto";
 
 export interface WebhookRegistration {
