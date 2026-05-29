@@ -8,6 +8,7 @@
  * ──────
  * jobs
  *   jobId       TEXT PRIMARY KEY
+ *   publicKey   TEXT            -- Stellar wallet that owns the job
  *   status      TEXT NOT NULL
  *   totalBatches    INTEGER NOT NULL DEFAULT 0
  *   completedBatches INTEGER NOT NULL DEFAULT 0
@@ -49,6 +50,7 @@ function getDb(): Database.Database {
   _db.exec(`
     CREATE TABLE IF NOT EXISTS jobs (
       jobId            TEXT PRIMARY KEY,
+      publicKey        TEXT,
       status           TEXT NOT NULL,
       totalBatches     INTEGER NOT NULL DEFAULT 0,
       completedBatches INTEGER NOT NULL DEFAULT 0,
@@ -64,6 +66,12 @@ function getDb(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_jobs_createdAt ON jobs (createdAt DESC);
   `);
 
+  const columns = _db.prepare("PRAGMA table_info(jobs)").all() as Array<{ name: string }>;
+  if (!columns.some((column) => column.name === "publicKey")) {
+    _db.exec("ALTER TABLE jobs ADD COLUMN publicKey TEXT");
+  }
+  _db.exec("CREATE INDEX IF NOT EXISTS idx_jobs_publicKey_createdAt ON jobs (publicKey, createdAt DESC)");
+
   return _db;
 }
 
@@ -73,6 +81,7 @@ function getDb(): Database.Database {
 
 interface JobRow {
   jobId: string;
+  publicKey: string | null;
   status: JobStatus;
   totalBatches: number;
   completedBatches: number;
@@ -87,6 +96,7 @@ interface JobRow {
 function rowToJobState(row: JobRow): JobState {
   return {
     jobId: row.jobId,
+    publicKey: row.publicKey,
     status: row.status,
     totalBatches: row.totalBatches,
     completedBatches: row.completedBatches,
@@ -110,6 +120,7 @@ function rowToJobState(row: JobRow): JobState {
 export function createJob(
   payments: PaymentInstruction[],
   network: "testnet" | "mainnet",
+  publicKey: string,
   signedTransactions?: string[],
 ): string {
   const db = getDb();
@@ -117,9 +128,9 @@ export function createJob(
   const now = new Date().toISOString();
 
   db.prepare(`
-    INSERT INTO jobs (jobId, status, totalBatches, completedBatches, payments, network, createdAt, updatedAt)
-    VALUES (?, 'queued', 0, 0, ?, ?, ?, ?)
-  `).run(jobId, JSON.stringify(payments), network, now, now);
+    INSERT INTO jobs (jobId, publicKey, status, totalBatches, completedBatches, payments, network, createdAt, updatedAt)
+    VALUES (?, ?, 'queued', 0, 0, ?, ?, ?, ?)
+  `).run(jobId, publicKey, JSON.stringify(payments), network, now, now);
 
   return jobId;
 }
@@ -127,9 +138,11 @@ export function createJob(
 /**
  * Retrieve a job by ID. Returns undefined if not found.
  */
-export function getJob(jobId: string): JobState | undefined {
+export function getJob(jobId: string, publicKey?: string): JobState | undefined {
   const db = getDb();
-  const row = db.prepare("SELECT * FROM jobs WHERE jobId = ?").get(jobId) as JobRow | undefined;
+  const row = publicKey
+    ? db.prepare("SELECT * FROM jobs WHERE jobId = ? AND publicKey = ?").get(jobId, publicKey) as JobRow | undefined
+    : db.prepare("SELECT * FROM jobs WHERE jobId = ?").get(jobId) as JobRow | undefined;
   return row ? rowToJobState(row) : undefined;
 }
 
@@ -175,6 +188,7 @@ export function getAllJobs(opts?: {
   offset?: number;
   status?: JobStatus;
   network?: "testnet" | "mainnet";
+  publicKey?: string;
 }): JobState[] {
   const db = getDb();
 
@@ -188,6 +202,10 @@ export function getAllJobs(opts?: {
   if (opts?.network) {
     conditions.push("network = ?");
     params.push(opts.network);
+  }
+  if (opts?.publicKey) {
+    conditions.push("publicKey = ?");
+    params.push(opts.publicKey);
   }
 
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
@@ -209,6 +227,7 @@ export function getAllJobs(opts?: {
 export function countJobs(opts?: {
   status?: JobStatus;
   network?: "testnet" | "mainnet";
+  publicKey?: string;
 }): number {
   const db = getDb();
 
@@ -222,6 +241,10 @@ export function countJobs(opts?: {
   if (opts?.network) {
     conditions.push("network = ?");
     params.push(opts.network);
+  }
+  if (opts?.publicKey) {
+    conditions.push("publicKey = ?");
+    params.push(opts.publicKey);
   }
 
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";

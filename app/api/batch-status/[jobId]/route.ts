@@ -8,6 +8,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { StrKey } from "stellar-sdk";
 import { getJob } from "@/lib/job-store";
 import { safeJsonResponse } from "@/lib/safe-json";
 
@@ -15,8 +16,9 @@ interface RouteParams {
   params: Promise<{ jobId: string }>;
 }
 
-export async function GET(_request: NextRequest, { params }: RouteParams) {
+export async function GET(request: NextRequest, { params }: RouteParams) {
   const { jobId } = await params;
+  const publicKey = request.nextUrl.searchParams.get("publicKey");
 
   if (!jobId) {
     return NextResponse.json(
@@ -25,7 +27,14 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     );
   }
 
-  const job = getJob(jobId);
+  if (!publicKey || !StrKey.isValidEd25519PublicKey(publicKey)) {
+    return NextResponse.json(
+      { error: "A valid publicKey query parameter is required" },
+      { status: 400 },
+    );
+  }
+
+  const job = getJob(jobId, publicKey);
 
   if (!job) {
     return NextResponse.json(

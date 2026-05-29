@@ -11,6 +11,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { StrKey } from "stellar-sdk";
 import { getAllJobs, countJobs } from "@/lib/job-store";
 import { safeJsonResponse } from "@/lib/safe-json";
 import type { JobStatus } from "@/lib/stellar/types";
@@ -24,6 +25,14 @@ export async function GET(request: NextRequest) {
 
   const rawStatus  = searchParams.get("status");
   const rawNetwork = searchParams.get("network");
+  const publicKey = searchParams.get("publicKey");
+
+  if (!publicKey || !StrKey.isValidEd25519PublicKey(publicKey)) {
+    return NextResponse.json(
+      { error: "A valid publicKey query parameter is required" },
+      { status: 400 },
+    );
+  }
 
   const validStatuses: JobStatus[] = ["queued", "processing", "completed", "failed"];
   const status  = validStatuses.includes(rawStatus as JobStatus) ? (rawStatus as JobStatus) : undefined;
@@ -31,8 +40,8 @@ export async function GET(request: NextRequest) {
 
   try {
     const [jobs, total] = [
-      getAllJobs({ limit, offset, status, network }),
-      countJobs({ status, network }),
+      getAllJobs({ limit, offset, status, network, publicKey }),
+      countJobs({ status, network, publicKey }),
     ];
 
     // Strip the full payments array from the list response to keep payloads small.

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { ExternalLink, ChevronDown, Loader2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { useWallet } from "@/contexts/WalletContext"
 import { cn } from "@/lib/utils"
 
 export interface HistoricalBatch {
@@ -55,6 +56,7 @@ function deriveDisplayStatus(batch: HistoricalBatch): "Success" | "Partial" | "F
 }
 
 export function HistoryTable({ data, className, page = 1, limit = 20, statusFilter, networkFilter }: HistoryTableProps) {
+  const { publicKey } = useWallet()
   const [rows, setRows]       = useState<HistoricalBatch[]>(data ?? [])
   const [loading, setLoading] = useState(!data)
   const [error, setError]     = useState<string | null>(null)
@@ -65,12 +67,20 @@ export function HistoryTable({ data, className, page = 1, limit = 20, statusFilt
       return
     }
 
+    if (!publicKey) {
+      setRows([])
+      setLoading(false)
+      setError(null)
+      return
+    }
+
     setLoading(true)
     setError(null)
 
     const params = new URLSearchParams({
       page:  String(page),
       limit: String(limit),
+      publicKey,
     })
     if (statusFilter)  params.set("status",  statusFilter)
     if (networkFilter) params.set("network", networkFilter)
@@ -83,7 +93,7 @@ export function HistoryTable({ data, className, page = 1, limit = 20, statusFilt
       .then((body) => setRows(body.items))
       .catch((e: unknown) => setError(e instanceof Error ? e.message : "Failed to load history"))
       .finally(() => setLoading(false))
-  }, [data, page, limit, statusFilter, networkFilter])
+  }, [data, page, limit, statusFilter, networkFilter, publicKey])
 
   if (loading) {
     return (
@@ -177,7 +187,7 @@ export function HistoryTable({ data, className, page = 1, limit = 20, statusFilt
                     <Button
                       variant="link"
                       className="text-[#00D98B] hover:text-[#00D98B]/80 p-0 h-auto font-medium"
-                      onClick={() => window.open(`/api/batch-status/${batch.jobId}`, "_blank")}
+                      onClick={() => window.open(`/api/batch-status/${batch.jobId}?publicKey=${encodeURIComponent(publicKey ?? "")}`, "_blank")}
                     >
                       View Details
                     </Button>
@@ -243,7 +253,7 @@ export function HistoryTable({ data, className, page = 1, limit = 20, statusFilt
                 <Button
                   variant="link"
                   className="text-[#00D98B] hover:text-[#00D98B]/80 p-0 h-auto text-xs font-semibold"
-                  onClick={() => window.open(`/api/batch-status/${batch.jobId}`, "_blank")}
+                  onClick={() => window.open(`/api/batch-status/${batch.jobId}?publicKey=${encodeURIComponent(publicKey ?? "")}`, "_blank")}
                 >
                   View Details <ExternalLink className="ml-1 h-3 w-3" />
                 </Button>

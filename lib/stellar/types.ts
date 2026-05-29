@@ -6,6 +6,7 @@ export type JobStatus = "queued" | "processing" | "completed" | "failed";
 
 export interface JobState {
   jobId: string;
+  publicKey: string | null;
   status: JobStatus;
   totalBatches: number;
   completedBatches: number;

@@ -10,12 +10,12 @@ export interface JobState {
   error?: string;
 }
 
-export function useBatchPolling(jobId: string | null) {
+export function useBatchPolling(jobId: string | null, publicKey: string | null) {
   const [jobState, setJobState] = useState<JobState | null>(null);
   const [isPolling, setIsPolling] = useState(false);
 
   useEffect(() => {
-    if (!jobId) {
+    if (!jobId || !publicKey) {
       setJobState(null);
       setIsPolling(false);
       return;
@@ -26,7 +26,8 @@ export function useBatchPolling(jobId: string | null) {
 
     const poll = async () => {
       try {
-        const response = await fetch(`/api/batch-status/${jobId}`);
+        const params = new URLSearchParams({ publicKey });
+        const response = await fetch(`/api/batch-status/${jobId}?${params.toString()}`);
         if (!response.ok) throw new Error("Failed to fetch job status");
         
         const data = await response.json();
@@ -48,7 +49,7 @@ export function useBatchPolling(jobId: string | null) {
     intervalId = setInterval(poll, 2000);
 
     return () => clearInterval(intervalId);
-  }, [jobId]);
+  }, [jobId, publicKey]);
 
   return { jobState, isPolling };
 }

@@ -89,11 +89,12 @@ export default function NewBatchPaymentPage() {
     }
   }, []);
 
-  const startPolling = useCallback((id: string) => {
+  const startPolling = useCallback((id: string, ownerPublicKey: string) => {
     stopPolling();
     pollRef.current = setInterval(async () => {
       try {
-        const res = await fetch(`/api/batch-status/${id}`);
+        const params = new URLSearchParams({ publicKey: ownerPublicKey });
+        const res = await fetch(`/api/batch-status/${id}?${params.toString()}`);
         if (!res.ok) return;
         const data = await res.json();
         setJobStatus(data.status);
@@ -232,7 +233,7 @@ export default function NewBatchPaymentPage() {
         </p>
       </div>
 
-      {      {/* Wallet Connection */}
+      {/* Wallet Connection */}
       <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-4 flex items-center justify-between">
         <div className="text-sm text-slate-400">
           {publicKey ? "Wallet connected" : "Connect your wallet to get started"}
@@ -475,6 +476,7 @@ export default function NewBatchPaymentPage() {
                     body: JSON.stringify({
                       payments: filteredPayments,
                       network: selectedNetwork,
+                      publicKey,
                     }),
                   });
                   const data = await response.json();
@@ -485,7 +487,7 @@ export default function NewBatchPaymentPage() {
                   setJobStatus("queued");
                   setCompletedBatches(0);
                   setTotalBatches(0);
-                  startPolling(data.jobId);
+                  startPolling(data.jobId, publicKey);
                 } catch (error) {
                   console.error('Batch submission error:', error);
                   setIsSubmitting(false);

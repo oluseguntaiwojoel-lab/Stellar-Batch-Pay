@@ -13,6 +13,9 @@ process.env.JOB_STORE_PATH = ":memory:";
 
 import { createJob, getJob, updateJob, getAllJobs, countJobs } from "../lib/job-store";
 
+const OWNER_PUBLIC_KEY = "GDQERHRWJYV7JHRP5V7DWJVI6Y5ABZP3YRH7DKYJRBEGJQKE6IQEOSY2";
+const OTHER_PUBLIC_KEY = "GB7QNDHSBQZENWGZUBJ4KLSZFRNHN5ATQXZSC3ZHZ5ZBQ6Y6X3TOBQ7S";
+
 const samplePayments = [
   {
     address: "GBBD47UZM2HN7D7XZIZVG4KVAUC36THN5BES6RMNNOK5TUNXAUCVMAKER",
@@ -28,7 +31,7 @@ const samplePayments = [
 
 describe("Job Store — createJob", () => {
   test("returns a non-empty UUID string", () => {
-    const jobId = createJob(samplePayments, "testnet");
+    const jobId = createJob(samplePayments, "testnet", OWNER_PUBLIC_KEY);
     expect(typeof jobId).toBe("string");
     expect(jobId.length).toBeGreaterThan(0);
     expect(jobId).toMatch(
@@ -37,37 +40,43 @@ describe("Job Store — createJob", () => {
   });
 
   test("returns unique IDs for each call", () => {
-    const id1 = createJob(samplePayments, "testnet");
-    const id2 = createJob(samplePayments, "testnet");
+    const id1 = createJob(samplePayments, "testnet", OWNER_PUBLIC_KEY);
+    const id2 = createJob(samplePayments, "testnet", OWNER_PUBLIC_KEY);
     expect(id1).not.toBe(id2);
   });
 
   test("initial job has status queued", () => {
-    const jobId = createJob(samplePayments, "testnet");
+    const jobId = createJob(samplePayments, "testnet", OWNER_PUBLIC_KEY);
     const job = getJob(jobId);
     expect(job?.status).toBe("queued");
   });
 
   test("initial job has completedBatches of 0", () => {
-    const jobId = createJob(samplePayments, "testnet");
+    const jobId = createJob(samplePayments, "testnet", OWNER_PUBLIC_KEY);
     const job = getJob(jobId);
     expect(job?.completedBatches).toBe(0);
   });
 
   test("stores the payments array on the job", () => {
-    const jobId = createJob(samplePayments, "testnet");
+    const jobId = createJob(samplePayments, "testnet", OWNER_PUBLIC_KEY);
     const job = getJob(jobId);
     expect(job?.payments).toEqual(samplePayments);
   });
 
   test("stores the network on the job", () => {
-    const jobId = createJob(samplePayments, "mainnet");
+    const jobId = createJob(samplePayments, "mainnet", OWNER_PUBLIC_KEY);
     const job = getJob(jobId);
     expect(job?.network).toBe("mainnet");
   });
 
+  test("stores the owner public key on the job", () => {
+    const jobId = createJob(samplePayments, "testnet", OWNER_PUBLIC_KEY);
+    const job = getJob(jobId);
+    expect(job?.publicKey).toBe(OWNER_PUBLIC_KEY);
+  });
+
   test("sets createdAt and updatedAt as ISO strings", () => {
-    const jobId = createJob(samplePayments, "testnet");
+    const jobId = createJob(samplePayments, "testnet", OWNER_PUBLIC_KEY);
     const job = getJob(jobId);
     expect(() => new Date(job!.createdAt)).not.toThrow();
     expect(() => new Date(job!.updatedAt)).not.toThrow();
@@ -81,16 +90,22 @@ describe("Job Store — getJob", () => {
   });
 
   test("retrieves an existing job", () => {
-    const jobId = createJob(samplePayments, "testnet");
+    const jobId = createJob(samplePayments, "testnet", OWNER_PUBLIC_KEY);
     const job = getJob(jobId);
     expect(job).toBeDefined();
     expect(job?.jobId).toBe(jobId);
+  });
+
+  test("scopes lookup by public key", () => {
+    const jobId = createJob(samplePayments, "testnet", OWNER_PUBLIC_KEY);
+    expect(getJob(jobId, OWNER_PUBLIC_KEY)).toBeDefined();
+    expect(getJob(jobId, OTHER_PUBLIC_KEY)).toBeUndefined();
   });
 });
 
 describe("Job Store — updateJob", () => {
   test("updates status to processing", () => {
-    const jobId = createJob(samplePayments, "testnet");
+    const jobId = createJob(samplePayments, "testnet", OWNER_PUBLIC_KEY);
     updateJob(jobId, { status: "processing", totalBatches: 5 });
     const job = getJob(jobId);
     expect(job?.status).toBe("processing");
@@ -98,7 +113,7 @@ describe("Job Store — updateJob", () => {
   });
 
   test("increments completedBatches", () => {
-    const jobId = createJob(samplePayments, "testnet");
+    const jobId = createJob(samplePayments, "testnet", OWNER_PUBLIC_KEY);
     updateJob(jobId, { status: "processing", totalBatches: 3 });
     updateJob(jobId, { completedBatches: 1 });
     updateJob(jobId, { completedBatches: 2 });
@@ -111,7 +126,7 @@ describe("Job Store — updateJob", () => {
   });
 
   test("preserves existing fields when partially updating", () => {
-    const jobId = createJob(samplePayments, "testnet");
+    const jobId = createJob(samplePayments, "testnet", OWNER_PUBLIC_KEY);
     updateJob(jobId, { status: "processing" });
     const job = getJob(jobId);
     expect(job?.network).toBe("testnet");
@@ -119,7 +134,7 @@ describe("Job Store — updateJob", () => {
   });
 
   test("updates updatedAt on each updateJob call", async () => {
-    const jobId = createJob(samplePayments, "testnet");
+    const jobId = createJob(samplePayments, "testnet", OWNER_PUBLIC_KEY);
     const before = getJob(jobId)!.updatedAt;
     await new Promise((r) => setTimeout(r, 5));
     updateJob(jobId, { completedBatches: 1 });
@@ -130,7 +145,7 @@ describe("Job Store — updateJob", () => {
   });
 
   test("sets completed status and attaches result", () => {
-    const jobId = createJob(samplePayments, "testnet");
+    const jobId = createJob(samplePayments, "testnet", OWNER_PUBLIC_KEY);
     const fakeResult = {
       batchId: jobId,
       totalRecipients: 2,
@@ -155,7 +170,7 @@ describe("Job Store — getAllJobs / countJobs", () => {
   });
 
   test("includes newly created jobs", () => {
-    const jobId = createJob(samplePayments, "testnet");
+    const jobId = createJob(samplePayments, "testnet", OWNER_PUBLIC_KEY);
     const jobs = getAllJobs();
     const found = jobs.find((j) => j.jobId === jobId);
     expect(found).toBeDefined();
@@ -168,21 +183,34 @@ describe("Job Store — getAllJobs / countJobs", () => {
   });
 
   test("status filter works", () => {
-    const jobId = createJob(samplePayments, "testnet");
+    const jobId = createJob(samplePayments, "testnet", OWNER_PUBLIC_KEY);
     updateJob(jobId, { status: "failed" });
     const failed = getAllJobs({ status: "failed" });
     expect(failed.every((j) => j.status === "failed")).toBe(true);
   });
 
   test("network filter works", () => {
-    createJob(samplePayments, "mainnet");
+    createJob(samplePayments, "mainnet", OWNER_PUBLIC_KEY);
     const mainnet = getAllJobs({ network: "mainnet" });
     expect(mainnet.every((j) => j.network === "mainnet")).toBe(true);
   });
 
+  test("publicKey filter isolates tenant history", () => {
+    const ownerJobId = createJob(samplePayments, "testnet", OWNER_PUBLIC_KEY);
+    const otherJobId = createJob(samplePayments, "testnet", OTHER_PUBLIC_KEY);
+
+    const ownerJobs = getAllJobs({ publicKey: OWNER_PUBLIC_KEY });
+    const ownerIds = ownerJobs.map((job) => job.jobId);
+    const ownerCount = countJobs({ publicKey: OWNER_PUBLIC_KEY });
+
+    expect(ownerIds).toContain(ownerJobId);
+    expect(ownerIds).not.toContain(otherJobId);
+    expect(ownerCount).toBeGreaterThanOrEqual(ownerJobs.length);
+  });
+
   test("pagination limit is respected", () => {
     // Create 5 more jobs
-    for (let i = 0; i < 5; i++) createJob(samplePayments, "testnet");
+    for (let i = 0; i < 5; i++) createJob(samplePayments, "testnet", OWNER_PUBLIC_KEY);
     const page = getAllJobs({ limit: 3, offset: 0 });
     expect(page.length).toBeLessThanOrEqual(3);
   });
