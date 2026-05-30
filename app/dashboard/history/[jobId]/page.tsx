@@ -23,6 +23,7 @@
 import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useWallet } from "@/contexts/WalletContext";
 import { MotionSafe } from "@/components/motion-safe";
 import { ArrowLeft, Copy, ExternalLink, Download, FileText, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -86,7 +87,11 @@ export default function BatchDetailPage({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [retrying, setRetrying] = useState(false);
+  const [retryJobId, setRetryJobId] = useState<string | null>(null);
+  const [retryJobData, setRetryJobData] = useState<JobStatusResponse | null>(null);
+  const [retryPollError, setRetryPollError] = useState<string | null>(null);
   const allowServerSigning = process.env.NEXT_PUBLIC_ALLOW_SERVER_SIGNING === "true";
+  const { publicKey } = useWallet();
 
   useEffect(() => {
     let cancelled = false;
@@ -121,7 +126,7 @@ export default function BatchDetailPage({
       const res = await fetch("/api/batch-retry", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jobId }),
+        body: JSON.stringify({ jobId, publicKey }),
       });
 
       const body = await res.json();
@@ -129,8 +134,31 @@ export default function BatchDetailPage({
         throw new Error(body.error || `Retry failed (${res.status})`);
       }
 
-      toast.success(`Retry job queued (${body.jobId})`);
-      router.push(`/dashboard/history/${body.jobId}`);
+      // Start inline polling for the newly queued retry job
+      const newJobId = body.jobId as string;
+      setRetryJobId(newJobId);
+      setRetryPollError(null);
+      toast.success(`Retry job queued (${newJobId})`);
+
+      let cancelled = false;
+
+      const poll = async () => {
+        try {
+          const r = await fetch(`/api/batch-status/${newJobId}`);
+          if (!r.ok) throw new Error(`Status fetch failed (${r.status})`);
+          const jb = (await r.json()) as JobStatusResponse;
+          if (cancelled) return;
+          setRetryJobData(jb);
+          if (jb.status === "queued" || jb.status === "processing") {
+            setTimeout(poll, 2000);
+          }
+        } catch (err) {
+          if (!cancelled) setRetryPollError((err as Error).message);
+        }
+      };
+
+      poll();
+      // keep retrying state while polling
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -204,6 +232,28 @@ export default function BatchDetailPage({
               />
             </div>
           )}
+          {retryJobId ? (
+            <div className="mt-4 rounded-md border border-[#1F2937] bg-[#0B1220] px-3 py-2">
+              <p className="text-sm text-gray-400">Retry job queued: <span className="font-mono text-xs text-white">{retryJobId}</span></p>
+              {retryPollError && <p className="text-xs text-red-400">{retryPollError}</p>}
+              {retryJobData ? (
+                <div className="flex items-center gap-3 mt-2 text-sm">
+                  <Badge className={
+                    retryJobData.status === "completed"
+                      ? "bg-[#00D98B]/20 text-[#00D98B]"
+                      : retryJobData.status === "failed"
+                        ? "bg-red-500/20 text-red-300"
+                        : "bg-yellow-500/20 text-yellow-200"
+                  }>{retryJobData.status}</Badge>
+                  <div className="text-gray-400">{retryJobData.summary?.successful ?? 0} succeeded</div>
+                  <div className="text-gray-400">{retryJobData.summary?.failed ?? 0} failed</div>
+                  <Link href={`/dashboard/history/${retryJobId}`} className="text-sm text-gray-300 hover:underline">Open</Link>
+                </div>
+              ) : (
+                <div className="mt-2 text-sm text-gray-400">Waiting for retry job status…</div>
+              )}
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -227,15 +277,26 @@ export default function BatchDetailPage({
                 <Download className="h-4 w-4 mr-1.5" />
                 Export CSV
               </Button>
-              {allowServerSigning && data.summary?.failed ? (
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={handleRetry}
-                  disabled={retrying}
-                >
-                  {retrying ? "Retrying…" : `Retry ${data.summary.failed} Failed`}
-                </Button>
+              {data.summary?.failed ? (
+                allowServerSigning ? (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={handleRetry}
+                    disabled={retrying}
+                  >
+                    {retrying ? "Retrying…" : `Retry ${data.summary.failed} Failed`}
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled
+                    title="Server-side retry is disabled in client-signing-only deployments. Set ALLOW_SERVER_SIGNING=true to enable."
+                  >
+                    Retry disabled (client-signing only)
+                  </Button>
+                )
               ) : null}
               <Button
                 variant="outline"
