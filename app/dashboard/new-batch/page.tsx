@@ -338,15 +338,15 @@ export default function NewBatchPaymentPage() {
               style={{ width: `${((step - 1) / (steps.length - 1)) * 100}%` }}
             />
             {steps.map((s) => (
-              <div key={s.id} className="flex flex-col items-center gap-2 bg-[#0B0F1A] px-2 md:px-4">
+              <div key={s.id} className="flex flex-col items-center gap-2 bg-background px-2 md:px-4">
                 <button
                   disabled={step < s.id && (s.id > 1 && (!validationResult || !summary))}
                   onClick={() => setStep(s.id)}
                   className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm transition-colors border-2 outline-hidden disabled:cursor-not-allowed ${step > s.id
                       ? "bg-emerald-500 border-emerald-500 text-white cursor-pointer hover:bg-emerald-600"
                       : step === s.id
-                        ? "bg-[#0B0F1A] border-emerald-500 text-emerald-500"
-                        : "bg-[#0B0F1A] border-slate-700 text-slate-500"
+                        ? "bg-background border-emerald-500 text-emerald-500"
+                        : "bg-background border-border text-muted-foreground"
                     }`}
                 >
                   {step > s.id ? <Check className="w-4 h-4" /> : s.id}

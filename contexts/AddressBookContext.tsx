@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { useToast } from "@/hooks/use-toast";
 
 export interface AddressBookEntry {
     address: string;
@@ -18,76 +19,135 @@ interface AddressBookContextType {
 
 const AddressBookContext = createContext<AddressBookContextType | undefined>(undefined);
 
-const STORAGE_KEY = "batchpay_address_book";
+const STORAGE_KEY = "stellar-batch-pay-address-book";
+const LEGACY_STORAGE_KEYS = ["batchpay_address_book"];
+
+type StoredAddressBookEntry = {
+    id?: string;
+    address?: unknown;
+    name?: unknown;
+    addedAt?: unknown;
+};
+
+function normalizeStoredEntries(raw: string | null): AddressBookEntry[] {
+    if (!raw) return [];
+
+    try {
+        const parsed = JSON.parse(raw) as StoredAddressBookEntry[];
+        if (!Array.isArray(parsed)) return [];
+
+        return parsed.flatMap((entry) => {
+            if (typeof entry.address !== "string" || typeof entry.name !== "string") {
+                return [];
+            }
+
+            return [{
+                address: entry.address,
+                name: entry.name,
+                addedAt: typeof entry.addedAt === "number" ? entry.addedAt : 0,
+            }];
+        });
+    } catch (err) {
+        console.error("Failed to parse address book:", err);
+        return [];
+    }
+}
+
+function mergeAddressBookEntries(entryGroups: AddressBookEntry[][]) {
+    const merged = new Map<string, AddressBookEntry>();
+    let importedCount = 0;
+
+    entryGroups.forEach((entries, groupIndex) => {
+        entries.forEach((entry) => {
+            const existing = merged.get(entry.address);
+            const shouldUseEntry = !existing || entry.addedAt >= existing.addedAt;
+
+            if (shouldUseEntry) {
+                merged.set(entry.address, entry);
+            }
+
+            if (groupIndex > 0 && shouldUseEntry) {
+                importedCount += 1;
+            }
+        });
+    });
+
+    return {
+        entries: Array.from(merged.values()).sort((a, b) => b.addedAt - a.addedAt),
+        importedCount,
+    };
+}
 
 export function AddressBookProvider({ children }: { children: React.ReactNode }) {
-    const [entries, setEntries] = useState<Record<string, string>>({});
+    const { toast } = useToast();
+    const [entries, setEntries] = useState<AddressBookEntry[]>([]);
     const [initialized, setInitialized] = useState(false);
 
-    // Load from localStorage on mount
+    // Load and migrate from localStorage on mount
     useEffect(() => {
-        const stored = localStorage.getItem(STORAGE_KEY);
-        if (stored) {
-            try {
-                const parsed = JSON.parse(stored) as any[];
-                const mapping: Record<string, string> = {};
-                parsed.forEach(entry => {
-                    if (entry.address && entry.name) {
-                        mapping[entry.address] = String(entry.name);
-                    }
-                });
-                setEntries(mapping);
-            } catch (err) {
-                console.error("Failed to parse address book:", err);
-            }
+        const canonicalEntries = normalizeStoredEntries(localStorage.getItem(STORAGE_KEY));
+        const legacyEntries = LEGACY_STORAGE_KEYS.map((key) => normalizeStoredEntries(localStorage.getItem(key)));
+        const { entries: mergedEntries, importedCount } = mergeAddressBookEntries([
+            canonicalEntries,
+            ...legacyEntries,
+        ]);
+
+        setEntries(mergedEntries);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(mergedEntries));
+        LEGACY_STORAGE_KEYS.forEach((key) => localStorage.removeItem(key));
+
+        if (importedCount > 0) {
+            toast({
+                title: `Imported ${importedCount} contacts`,
+                description: "Contacts from previous storage were merged into your address book.",
+            });
+            console.info(`Imported ${importedCount} contacts from legacy address book storage.`);
         }
+
         setInitialized(true);
-    }, []);
+    }, [toast]);
 
     // Persist to localStorage when entries change
     useEffect(() => {
         if (!initialized) return;
 
-        const entryList: AddressBookEntry[] = Object.entries(entries).map(([address, name]) => ({
-            address,
-            name,
-            addedAt: Date.now(),
-        }));
-
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(entryList));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
     }, [entries, initialized]);
 
     const getName = useCallback((address: string) => {
-        return entries[address] || null;
+        return entries.find((entry) => entry.address === address)?.name || null;
     }, [entries]);
 
     const saveName = useCallback((address: string, name: string) => {
-        setEntries(prev => ({
-            ...prev,
-            [address]: name
-        }));
-    }, []);
-
-    const removeEntry = useCallback((address: string) => {
         setEntries(prev => {
-            const next = { ...prev };
-            delete next[address];
-            return next;
+            const now = Date.now();
+            const exists = prev.some((entry) => entry.address === address);
+
+            if (!exists) {
+                return [...prev, { address, name, addedAt: now }];
+            }
+
+            return prev.map((entry) => (
+                entry.address === address ? { ...entry, name, addedAt: now } : entry
+            ));
         });
     }, []);
 
-    const allEntries: AddressBookEntry[] = Object.entries(entries).map(([address, name]) => ({
-        address,
-        name,
-        addedAt: 0,
-    }));
+    const removeEntry = useCallback((address: string) => {
+        setEntries(prev => prev.filter((entry) => entry.address !== address));
+    }, []);
+
+    const entryMap = entries.reduce<Record<string, string>>((mapping, entry) => {
+        mapping[entry.address] = entry.name;
+        return mapping;
+    }, {});
 
     const value: AddressBookContextType = {
-        entries,
+        entries: entryMap,
         getName,
         saveName,
         removeEntry,
-        allEntries,
+        allEntries: entries,
     };
 
     return (
