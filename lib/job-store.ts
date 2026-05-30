@@ -30,6 +30,7 @@ import type {
   PaymentInstruction,
   BatchResult,
 } from "./stellar/types";
+import { escapeLikePattern } from "./history-filters";
 
 // ---------------------------------------------------------------------------
 // DB initialisation
@@ -201,19 +202,22 @@ export function updateJob(
   );
 }
 
-/**
- * Return all jobs ordered by creation time descending (newest first).
- * Accepts optional filters for the batch history endpoint.
- */
-export function getAllJobs(opts?: {
-  limit?: number;
-  offset?: number;
+export interface JobQueryFilters {
   status?: JobStatus;
   network?: "testnet" | "mainnet";
   publicKey?: string;
-}): JobState[] {
-  const db = getDb();
+  /** Case-insensitive substring match on jobId, payments JSON, or result JSON. */
+  search?: string;
+  /** ISO timestamp — include jobs with createdAt >= from. */
+  from?: string;
+  /** ISO timestamp — include jobs with createdAt <= to. */
+  to?: string;
+}
 
+function buildJobQueryFilters(opts?: JobQueryFilters): {
+  where: string;
+  params: (string | number)[];
+} {
   const conditions: string[] = [];
   const params: (string | number)[] = [];
 
@@ -229,18 +233,44 @@ export function getAllJobs(opts?: {
     conditions.push("publicKey = ?");
     params.push(opts.publicKey);
   }
+  if (opts?.from) {
+    conditions.push("createdAt >= ?");
+    params.push(opts.from);
+  }
+  if (opts?.to) {
+    conditions.push("createdAt <= ?");
+    params.push(opts.to);
+  }
+  if (opts?.search?.trim()) {
+    const term = `%${escapeLikePattern(opts.search.trim())}%`;
+    conditions.push(
+      "(jobId LIKE ? ESCAPE '\\' OR COALESCE(result, '') LIKE ? ESCAPE '\\' OR payments LIKE ? ESCAPE '\\')",
+    );
+    params.push(term, term, term);
+  }
 
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+  return { where, params };
+}
+
+/**
+ * Return all jobs ordered by creation time descending (newest first).
+ * Accepts optional filters for the batch history endpoint.
+ */
+export function getAllJobs(opts?: JobQueryFilters & {
+  limit?: number;
+  offset?: number;
+}): JobState[] {
+  const db = getDb();
+  const { where, params } = buildJobQueryFilters(opts);
   const limit = opts?.limit ?? 50;
   const offset = opts?.offset ?? 0;
-
-  params.push(limit, offset);
 
   const rows = db
     .prepare(
       `SELECT * FROM jobs ${where} ORDER BY createdAt DESC LIMIT ? OFFSET ?`,
     )
-    .all(...params) as JobRow[];
+    .all(...params, limit, offset) as JobRow[];
 
   return rows.map(rowToJobState);
 }
@@ -248,30 +278,9 @@ export function getAllJobs(opts?: {
 /**
  * Return the total count of jobs (optionally filtered).
  */
-export function countJobs(opts?: {
-  status?: JobStatus;
-  network?: "testnet" | "mainnet";
-  publicKey?: string;
-}): number {
+export function countJobs(opts?: JobQueryFilters): number {
   const db = getDb();
-
-  const conditions: string[] = [];
-  const params: (string | number)[] = [];
-
-  if (opts?.status) {
-    conditions.push("status = ?");
-    params.push(opts.status);
-  }
-  if (opts?.network) {
-    conditions.push("network = ?");
-    params.push(opts.network);
-  }
-  if (opts?.publicKey) {
-    conditions.push("publicKey = ?");
-    params.push(opts.publicKey);
-  }
-
-  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+  const { where, params } = buildJobQueryFilters(opts);
   const row = db
     .prepare(`SELECT COUNT(*) as cnt FROM jobs ${where}`)
     .get(...params) as { cnt: number };

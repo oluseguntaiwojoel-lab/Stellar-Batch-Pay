@@ -214,4 +214,24 @@ describe("Job Store — getAllJobs / countJobs", () => {
     const page = getAllJobs({ limit: 3, offset: 0 });
     expect(page.length).toBeLessThanOrEqual(3);
   });
+
+  test("search filter matches jobId substring", () => {
+    const jobId = createJob(samplePayments, "testnet", OWNER_PUBLIC_KEY);
+    const matches = getAllJobs({ search: jobId.slice(0, 8), publicKey: OWNER_PUBLIC_KEY });
+    expect(matches.some((job) => job.jobId === jobId)).toBe(true);
+  });
+
+  test("search filter matches recipient address in payments JSON", () => {
+    const address = samplePayments[0]?.address ?? "GSEARCHMATCH";
+    const jobId = createJob(samplePayments, "testnet", OWNER_PUBLIC_KEY);
+    const matches = getAllJobs({ search: address, publicKey: OWNER_PUBLIC_KEY });
+    expect(matches.some((job) => job.jobId === jobId)).toBe(true);
+  });
+
+  test("from date filter excludes older jobs", () => {
+    const jobId = createJob(samplePayments, "testnet", OWNER_PUBLIC_KEY);
+    const futureFrom = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    const matches = getAllJobs({ from: futureFrom, publicKey: OWNER_PUBLIC_KEY });
+    expect(matches.some((job) => job.jobId === jobId)).toBe(false);
+  });
 });

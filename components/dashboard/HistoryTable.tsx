@@ -1,7 +1,8 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { ExternalLink, ChevronDown, Loader2 } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { ChevronDown, ChevronRight, Loader2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useWallet } from "@/contexts/WalletContext"
@@ -27,6 +28,9 @@ interface HistoryTableProps {
   limit?: number
   statusFilter?: string
   networkFilter?: string
+  searchFilter?: string
+  fromFilter?: string
+  onPaginationLoad?: (pagination: { totalPages: number; total: number }) => void
 }
 
 function formatDate(iso: string): string {
@@ -55,11 +59,32 @@ function deriveDisplayStatus(batch: HistoricalBatch): "Success" | "Partial" | "F
   return "Success"
 }
 
-export function HistoryTable({ data, className, page = 1, limit = 20, statusFilter, networkFilter }: HistoryTableProps) {
+export function HistoryTable({
+  data,
+  className,
+  page = 1,
+  limit = 20,
+  statusFilter,
+  networkFilter,
+  searchFilter,
+  fromFilter,
+  onPaginationLoad,
+}: HistoryTableProps) {
+  const router = useRouter()
   const { publicKey } = useWallet()
   const [rows, setRows]       = useState<HistoricalBatch[]>(data ?? [])
   const [loading, setLoading] = useState(!data)
   const [error, setError]     = useState<string | null>(null)
+  const [debouncedSearch, setDebouncedSearch] = useState(searchFilter ?? "")
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchFilter ?? ""), 300)
+    return () => clearTimeout(timer)
+  }, [searchFilter])
+
+  const openBatchDetail = (jobId: string) => {
+    router.push(`/dashboard/history/${jobId}`)
+  }
 
   useEffect(() => {
     if (data) {
@@ -84,16 +109,24 @@ export function HistoryTable({ data, className, page = 1, limit = 20, statusFilt
     })
     if (statusFilter)  params.set("status",  statusFilter)
     if (networkFilter) params.set("network", networkFilter)
+    if (debouncedSearch.trim()) params.set("search", debouncedSearch.trim())
+    if (fromFilter) params.set("from", fromFilter)
 
     fetch(`/api/batch-history?${params.toString()}`)
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
-        return r.json() as Promise<{ items: HistoricalBatch[] }>
+        return r.json() as Promise<{
+          items: HistoricalBatch[]
+          pagination: { totalPages: number; total: number }
+        }>
       })
-      .then((body) => setRows(body.items))
+      .then((body) => {
+        setRows(body.items)
+        onPaginationLoad?.(body.pagination)
+      })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : "Failed to load history"))
       .finally(() => setLoading(false))
-  }, [data, page, limit, statusFilter, networkFilter, publicKey])
+  }, [data, page, limit, statusFilter, networkFilter, debouncedSearch, fromFilter, publicKey, onPaginationLoad])
 
   if (loading) {
     return (
@@ -187,7 +220,7 @@ export function HistoryTable({ data, className, page = 1, limit = 20, statusFilt
                     <Button
                       variant="link"
                       className="text-[#00D98B] hover:text-[#00D98B]/80 p-0 h-auto font-medium"
-                      onClick={() => window.open(`/api/batch-status/${batch.jobId}?publicKey=${encodeURIComponent(publicKey ?? "")}`, "_blank")}
+                      onClick={() => openBatchDetail(batch.jobId)}
                     >
                       View Details
                     </Button>
@@ -253,9 +286,9 @@ export function HistoryTable({ data, className, page = 1, limit = 20, statusFilt
                 <Button
                   variant="link"
                   className="text-[#00D98B] hover:text-[#00D98B]/80 p-0 h-auto text-xs font-semibold"
-                  onClick={() => window.open(`/api/batch-status/${batch.jobId}?publicKey=${encodeURIComponent(publicKey ?? "")}`, "_blank")}
+                  onClick={() => openBatchDetail(batch.jobId)}
                 >
-                  View Details <ExternalLink className="ml-1 h-3 w-3" />
+                  View Details <ChevronRight className="ml-1 h-3 w-3" />
                 </Button>
               </div>
             </div>

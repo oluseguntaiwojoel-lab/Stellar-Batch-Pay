@@ -29,33 +29,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { useWallet } from "@/contexts/WalletContext";
 import {
   buildBatchExportRows,
   toBatchExportCsv,
   toBatchExportHtml,
 } from "@/lib/dashboard/batch-export";
-
-interface JobStatusResponse {
-  jobId: string;
-  status: "queued" | "processing" | "completed" | "failed";
-  network: "testnet" | "mainnet";
-  createdAt?: string;
-  completedAt?: string;
-  totalBatches?: number;
-  completedBatches?: number;
-  summary?: {
-    successful: number;
-    failed: number;
-  };
-  recipients?: Array<{
-    address: string;
-    amount: string;
-    asset: string;
-    status: "pending" | "success" | "failed";
-    transactionHash?: string;
-    error?: string;
-  }>;
-}
+import {
+  mapBatchStatusToDetailView,
+  type BatchDetailView,
+} from "@/lib/dashboard/batch-detail";
 
 function explorerUrl(hash: string, network: "testnet" | "mainnet"): string {
   const base =
@@ -82,7 +65,8 @@ export default function BatchDetailPage({
 }) {
   const { jobId } = use(params);
   const router = useRouter();
-  const [data, setData] = useState<JobStatusResponse | null>(null);
+  const { publicKey } = useWallet();
+  const [data, setData] = useState<BatchDetailView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [retrying, setRetrying] = useState(false);
@@ -90,26 +74,37 @@ export default function BatchDetailPage({
 
   useEffect(() => {
     let cancelled = false;
+
+    if (!publicKey) {
+      setData(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+
     async function load() {
       setLoading(true);
+      setError(null);
       try {
-        const res = await fetch(`/api/batch-status/${jobId}`);
+        const params = new URLSearchParams({ publicKey });
+        const res = await fetch(`/api/batch-status/${jobId}?${params.toString()}`);
         if (!res.ok) {
           throw new Error(`Failed to load batch (HTTP ${res.status})`);
         }
-        const body = (await res.json()) as JobStatusResponse;
-        if (!cancelled) setData(body);
+        const body = await res.json();
+        if (!cancelled) setData(mapBatchStatusToDetailView(body));
       } catch (e) {
         if (!cancelled) setError((e as Error).message);
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
+
     load();
     return () => {
       cancelled = true;
     };
-  }, [jobId]);
+  }, [jobId, publicKey]);
 
   const handleRetry = async () => {
     if (!data?.summary?.failed) {
@@ -188,10 +183,13 @@ export default function BatchDetailPage({
               <Loader2 className="h-4 w-4 animate-spin" /> Loading job…
             </div>
           )}
+          {!loading && !publicKey && (
+            <p className="text-gray-400">Connect your wallet to view batch details.</p>
+          )}
           {error && <p className="text-red-300">{error}</p>}
           {data && (
             <div className="grid sm:grid-cols-3 gap-4 text-sm">
-              <Metric label="Recipients" value={data.recipients?.length ?? 0} />
+              <Metric label="Recipients" value={data.recipients.length} />
               <Metric
                 label="Successful"
                 value={data.summary?.successful ?? 0}
@@ -265,7 +263,7 @@ export default function BatchDetailPage({
                 </tr>
               </thead>
               <tbody>
-                {(data.recipients ?? []).map((r, i) => (
+                {data.recipients.map((r, i) => (
                   <tr key={`${r.address}-${i}`} className="border-b border-[#1F2937]/50">
                     <td className="py-3 pr-4 font-mono text-xs text-gray-300 break-all">
                       {r.address}

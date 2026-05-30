@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { MotionSafe } from "@/components/motion-safe";
 import {
   HistoryFilterBar,
@@ -12,6 +12,7 @@ import { Pagination } from "@/components/dashboard/Pagination";
 import { MetricsGrid } from "@/components/dashboard/MetricsGrid";
 import { HistoryExportCenter } from "@/components/dashboard/HistoryExportCenter";
 import { Card, CardContent } from "@/components/ui/card";
+import { dateRangeToFrom } from "@/lib/history-filters";
 
 // #360: filter + pagination state is owned by the page so the
 // HistoryTable query and Pagination controls actually react to user
@@ -24,12 +25,17 @@ const DEFAULT_LIMIT = 10;
 export default function HistoryPage() {
   const [filters, setFilters] = useState<HistoryFilterValues>(DEFAULT_HISTORY_FILTERS);
   const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   // Reset to page 1 whenever the filters change so a 5-page result
   // doesn't trap the user on page 3 of an empty filtered view.
   const handleFiltersChange = (next: HistoryFilterValues) => {
     setFilters(next);
     setPage(1);
   };
+
+  const handlePaginationLoad = useCallback(({ totalPages: nextTotalPages }: { totalPages: number; total: number }) => {
+    setTotalPages(Math.max(1, nextTotalPages));
+  }, []);
 
   return (
     <MotionSafe
@@ -60,19 +66,14 @@ export default function HistoryPage() {
             limit={DEFAULT_LIMIT}
             statusFilter={filters.status === "all" ? undefined : filters.status}
             networkFilter={filters.network === "all" ? undefined : filters.network}
+            searchFilter={filters.search}
+            fromFilter={dateRangeToFrom(filters.dateRange)}
+            onPaginationLoad={handlePaginationLoad}
           />
           <div className="px-4 pb-4 sm:px-0 sm:pb-0">
-            {/*
-              HistoryTable owns its own paged fetch, so the page count
-              is what the API reports through `useBatchHistory`. For
-              the MVP we assume a 10-page upper bound; once the API
-              starts returning a real total this number can come from
-              the table via a callback. The buttons themselves are
-              fully wired regardless.
-            */}
             <Pagination
               currentPage={page}
-              totalPages={10}
+              totalPages={totalPages}
               onPageChange={setPage}
             />
           </div>
