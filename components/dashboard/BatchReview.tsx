@@ -15,7 +15,10 @@ import {
 import { useWallet } from "@/contexts/WalletContext";
 import { useBalances } from "@/hooks/use-balances";
 import { useTrustlines } from "@/hooks/use-trustlines";
-import { aggregatePaymentsByAsset } from "@/utils/aggregateAssets";
+import {
+  aggregatePaymentsByAsset,
+  type AssetAmount,
+} from "@/utils/aggregateAssets";
 import { validateBatchSubmission } from "@/utils/validation";
 import type { PaymentInstruction } from "@/lib/stellar/types";
 
@@ -118,6 +121,15 @@ export function BatchReview({
     [payments, skippedIndices, convertedIndices, trustlineMap],
   );
 
+  const mappedBalances = useMemo<AssetAmount[]>(() => {
+    return balances.map((bal) => ({
+      asset:
+        bal.assetCode === "XLM" ? "XLM" : `${bal.assetCode}:${bal.assetIssuer}`,
+      total: bal.balance,
+      count: 1,
+    }));
+  }, [balances]);
+
   const largeBatches = useMemo(
     () =>
       (batchMeta ?? []).filter(
@@ -131,7 +143,7 @@ export function BatchReview({
       (_, idx) =>
         !skippedIndices.includes(idx) && !convertedIndices.includes(idx),
     ),
-    balances,
+    mappedBalances,
     missingTrustlineAddresses,
     network,
   );
@@ -197,12 +209,14 @@ export function BatchReview({
               <div className="space-y-1">
                 <p className="text-amber-200 font-medium">
                   {largeBatches.length} batch
-                  {largeBatches.length > 1 ? "es" : ""} near the 100KB transaction
-                  limit
+                  {largeBatches.length > 1 ? "es" : ""} near the 100KB
+                  transaction limit
                 </p>
                 <p className="text-sm text-amber-100/80">
                   Largest estimate:{" "}
-                  {Math.max(...largeBatches.map((b) => b.estimatedBytes)).toLocaleString()}{" "}
+                  {Math.max(
+                    ...largeBatches.map((b) => b.estimatedBytes),
+                  ).toLocaleString()}{" "}
                   bytes. Long memos may require fewer payments per transaction.
                 </p>
               </div>

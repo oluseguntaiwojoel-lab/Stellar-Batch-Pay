@@ -11,20 +11,26 @@ import { NextRequest, NextResponse } from "next/server";
 import { createJob, getJob } from "@/lib/job-store";
 import { processJobInBackground } from "@/lib/stellar/batch-worker";
 import { safeJsonResponse } from "@/lib/safe-json";
+import { logger } from "@/lib/logger";
 
 export async function POST(request: NextRequest) {
+    const requestId = request.headers.get("x-request-id");
     try {
         const body = (await request.json()) as { jobId?: string };
         const jobId = body.jobId;
 
         if (!jobId || typeof jobId !== "string") {
+            logger.warn({ requestId }, "Missing jobId in retry request");
             return NextResponse.json(
                 { error: "jobId is required" },
                 { status: 400 },
             );
         }
 
+        logger.info({ requestId, jobId }, "Batch retry handler started");
+
         if (process.env.ALLOW_SERVER_SIGNING !== "true") {
+            logger.warn({ requestId, jobId }, "Server-side signing is disabled for retry");
             return NextResponse.json(
                 {
                     error:
@@ -36,6 +42,7 @@ export async function POST(request: NextRequest) {
 
         const secretKey = process.env.STELLAR_SECRET_KEY;
         if (!secretKey) {
+            logger.error({ requestId, jobId }, "STELLAR_SECRET_KEY is not configured for retry");
             return NextResponse.json(
                 {
                     error:
@@ -47,6 +54,7 @@ export async function POST(request: NextRequest) {
 
         const job = getJob(jobId);
         if (!job || !job.result) {
+            logger.warn({ requestId, jobId }, "Batch job not found or not completed");
             return NextResponse.json(
                 { error: "Batch job not found or not completed yet" },
                 { status: 404 },
@@ -55,6 +63,7 @@ export async function POST(request: NextRequest) {
 
         const failedResults = job.result.results.filter((r) => r.status === "failed");
         if (failedResults.length === 0) {
+            logger.warn({ requestId, jobId }, "No failed payments to retry");
             return NextResponse.json(
                 { error: "No failed payments available for retry" },
                 { status: 400 },
@@ -62,6 +71,7 @@ export async function POST(request: NextRequest) {
         }
 
         if (!job.payments || job.payments.length === 0) {
+            logger.warn({ requestId, jobId }, "Retry not available for pre-signed batches");
             return NextResponse.json(
                 {
                     error:
@@ -96,14 +106,17 @@ export async function POST(request: NextRequest) {
         });
 
         if (failedPayments.length === 0) {
+            logger.error({ requestId, jobId }, "Failed to map failed results to original payments");
             return NextResponse.json(
                 { error: "Could not map failed results back to original payments" },
                 { status: 500 },
             );
         }
 
-        const retryJobId = createJob(failedPayments, job.network);
-        void processJobInBackground(retryJobId, failedPayments, job.network, secretKey);
+        const retryJobId = createJob(failedPayments, job.network, job.publicKey || "");
+        void processJobInBackground(retryJobId, failedPayments, job.network, secretKey, undefined, requestId || undefined);
+
+        logger.info({ requestId, jobId, retryJobId }, "Retry job successfully created and triggered");
 
         return safeJsonResponse(
             {
@@ -115,7 +128,7 @@ export async function POST(request: NextRequest) {
             { status: 202 },
         );
     } catch (error: unknown) {
-        console.error("Batch retry error:", error);
+        logger.error({ requestId }, "Batch retry error", error);
         return safeJsonResponse(
             {
                 error:

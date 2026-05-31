@@ -4,11 +4,13 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { FileUpload } from "@/components/file-upload";
-import { ConnectWalletButton } from "@/components/connect-wallet-button";
+import { DashboardWalletEmpty } from "@/components/dashboard/dashboard-wallet-empty";
+import { MotionSafe } from "@/components/motion-safe";
+import { motionCssDuration, stepEnter } from "@/lib/motion-tokens";
 import { BatchDryRun } from "@/components/dashboard/BatchDryRun";
 import { CsvValidationErrors } from "@/components/csv-validation-errors";
 import { JobProgress } from "@/components/job-progress";
-import { ResultsDisplay } from "@/components/results-display";
+// import { ResultsDisplay } from "@/components/results-display";
 import { useWallet } from "@/contexts/WalletContext";
 import { parsePaymentFile, getBatchSummary } from "@/lib/stellar";
 import { validatePaymentInstructions } from "@/lib/stellar/validator";
@@ -19,7 +21,16 @@ import type {
   PaymentInstruction,
   BatchMetaEntry,
 } from "@/lib/stellar/types";
-import { Send, Info, Lightbulb, Check, AlertCircle, BookOpen, UserPlus, FileUp } from "lucide-react";
+import {
+  Send,
+  Info,
+  Lightbulb,
+  Check,
+  AlertCircle,
+  BookOpen,
+  UserPlus,
+  FileUp,
+} from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ManualBatchEntry } from "@/components/dashboard/ManualBatchEntry";
 import { analyzeParsedPayments } from "@/lib/stellar/parser";
@@ -28,13 +39,41 @@ import { CheckCircle2 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { BatchErrorBoundary } from "@/components/BatchErrorBoundary";
+import { canonicalizeIdempotencyPayload } from "@/lib/idempotency";
+
+async function buildBatchSubmitIdempotencyKey(body: {
+  payments?: PaymentInstruction[];
+  network: "testnet" | "mainnet";
+  publicKey: string;
+}) {
+  const canonicalBody = canonicalizeIdempotencyPayload({
+    payments: body.payments ?? null,
+    network: body.network,
+    publicKey: body.publicKey,
+  });
+
+  const webCrypto = globalThis.crypto;
+
+  if (!webCrypto?.subtle) {
+    return webCrypto?.randomUUID() ?? `${Date.now()}-${Math.random()}`;
+  }
+
+  const encoded = new TextEncoder().encode(canonicalBody);
+  const digest = await webCrypto.subtle.digest("SHA-256", encoded);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
 
 export default function NewBatchPaymentPage() {
   const [step, setStep] = useState(1);
-  const [selectedNetwork, setSelectedNetwork] = useState<"testnet" | "mainnet">("testnet");
+  const [selectedNetwork, setSelectedNetwork] = useState<"testnet" | "mainnet">(
+    "testnet",
+  );
   const [file, setFile] = useState<File | null>(null);
   const [fileFormat, setFileFormat] = useState<"json" | "csv" | null>(null);
-  const [validationResult, setValidationResult] = useState<ParsedPaymentFile | null>(null);
+  const [validationResult, setValidationResult] =
+    useState<ParsedPaymentFile | null>(null);
   const [validationError, setValidationError] = useState("");
   const [summary, setSummary] = useState<{
     recipientCount: number;
@@ -49,8 +88,9 @@ export default function NewBatchPaymentPage() {
   const [jobStatus, setJobStatus] = useState<JobStatus>("queued");
   const [completedBatches, setCompletedBatches] = useState(0);
   const [totalBatches, setTotalBatches] = useState(0);
-  const [manualPayments, setManualPayments] = useState<PaymentInstruction[]>([]);
-  const [manualCanContinue, setManualCanContinue] = useState(false);
+  const [manualPayments, setManualPayments] = useState<PaymentInstruction[]>(
+    [],
+  );
   const [entryMode, setEntryMode] = useState<"upload" | "manual">("upload");
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -67,7 +107,14 @@ export default function NewBatchPaymentPage() {
     if (validationResult || manualPayments.length > 0) {
       sessionStorage.setItem("new_batch_state", JSON.stringify(stateToSave));
     }
-  }, [step, selectedNetwork, validationResult, summary, manualPayments, entryMode]);
+  }, [
+    step,
+    selectedNetwork,
+    validationResult,
+    summary,
+    manualPayments,
+    entryMode,
+  ]);
 
   // Restore state from sessionStorage
   const handleRestore = (saved: any) => {
@@ -98,33 +145,38 @@ export default function NewBatchPaymentPage() {
     }
   }, []);
 
-  const startPolling = useCallback((id: string, ownerPublicKey: string) => {
-    stopPolling();
-    pollRef.current = setInterval(async () => {
-      try {
-        const params = new URLSearchParams({ publicKey: ownerPublicKey });
-        const res = await fetch(`/api/batch-status/${id}?${params.toString()}`);
-        if (!res.ok) return;
-        const data = await res.json();
-        setJobStatus(data.status);
-        setCompletedBatches(data.completedBatches ?? 0);
-        setTotalBatches(data.totalBatches ?? 0);
-        if (data.status === "completed") {
-          stopPolling();
-          setResult(data.result ?? null);
-          setIsSubmitting(false);
-          setStep(4);
-          toast.success("Batch submitted successfully");
-        } else if (data.status === "failed") {
-          stopPolling();
-          setIsSubmitting(false);
-          toast.error(data.error ?? "Batch processing failed");
+  const startPolling = useCallback(
+    (id: string, ownerPublicKey: string) => {
+      stopPolling();
+      pollRef.current = setInterval(async () => {
+        try {
+          const params = new URLSearchParams({ publicKey: ownerPublicKey });
+          const res = await fetch(
+            `/api/batch-status/${id}?${params.toString()}`,
+          );
+          if (!res.ok) return;
+          const data = await res.json();
+          setJobStatus(data.status);
+          setCompletedBatches(data.completedBatches ?? 0);
+          setTotalBatches(data.totalBatches ?? 0);
+          if (data.status === "completed") {
+            stopPolling();
+            setResult(data.result ?? null);
+            setIsSubmitting(false);
+            setStep(4);
+            toast.success("Batch submitted successfully");
+          } else if (data.status === "failed") {
+            stopPolling();
+            setIsSubmitting(false);
+            toast.error(data.error ?? "Batch processing failed");
+          }
+        } catch {
+          // ignore transient fetch errors
         }
-      } catch {
-        // ignore transient fetch errors
-      }
-    }, 2000);
-  }, [stopPolling]);
+      }, 2000);
+    },
+    [stopPolling],
+  );
 
   useEffect(() => () => stopPolling(), [stopPolling]);
   const [skippedIndices, setSkippedIndices] = useState<number[]>([]);
@@ -132,7 +184,8 @@ export default function NewBatchPaymentPage() {
   const [batchMeta, setBatchMeta] = useState<BatchMetaEntry[] | undefined>();
   const [batchMetaLoading, setBatchMetaLoading] = useState(false);
   const { publicKey, signTx } = useWallet();
-  const allowServerSigning = process.env.NEXT_PUBLIC_ALLOW_SERVER_SIGNING === "true";
+  const allowServerSigning =
+    process.env.NEXT_PUBLIC_ALLOW_SERVER_SIGNING === "true";
 
   const loadBatchMeta = useCallback(
     async (payments: PaymentInstruction[]) => {
@@ -168,7 +221,7 @@ export default function NewBatchPaymentPage() {
   );
 
   const handleSkipToggle = (index: number) => {
-    setSkippedIndices(prev => {
+    setSkippedIndices((prev) => {
       const next = [...prev];
       const idx = next.indexOf(index);
       if (idx >= 0) {
@@ -181,7 +234,7 @@ export default function NewBatchPaymentPage() {
   };
 
   const handleConvertToggle = (index: number) => {
-    setConvertedIndices(prev => {
+    setConvertedIndices((prev) => {
       const next = [...prev];
       const idx = next.indexOf(index);
       if (idx >= 0) {
@@ -209,7 +262,9 @@ export default function NewBatchPaymentPage() {
     setSkippedIndices([]);
     setConvertedIndices([]);
     setStep(2);
-    toast.success('Loaded failed payments for retry. Review before resubmitting.');
+    toast.success(
+      "Loaded failed payments for retry. Review before resubmitting.",
+    );
   };
 
   // UX: Warn before closing tab during submission (#287)
@@ -233,28 +288,10 @@ export default function NewBatchPaymentPage() {
     { id: 4, name: "Submit" },
   ];
 
-  const canNavigateToStep = (targetStep: number): boolean => {
-    if (targetStep === 1) return true;
-    if (targetStep <= step) return true;
-    if (targetStep === 2) return Boolean(validationResult && summary);
-    if (targetStep === 3) {
-      return Boolean(
-        validationResult &&
-          summary &&
-          summary.validCount > 0 &&
-          batchMeta,
-      );
-    }
-    if (targetStep === 4) return Boolean(result);
-    return false;
-  };
-
-  const handleStepClick = (targetStep: number) => {
-    if (!canNavigateToStep(targetStep)) return;
-    setStep(targetStep);
-  };
-
-  const handleFileSelect = async (selectedFile: File, format: "json" | "csv") => {
+  const handleFileSelect = async (
+    selectedFile: File,
+    format: "json" | "csv",
+  ) => {
     setFile(selectedFile);
     setFileFormat(format);
 
@@ -265,7 +302,7 @@ export default function NewBatchPaymentPage() {
       setValidationError("");
 
       // Calculate summary
-      const instructions = parsed.rows.map(r => r.instruction);
+      const instructions = parsed.rows.map((r) => r.instruction);
       const batchSummary = getBatchSummary(instructions);
       setSummary(batchSummary);
 
@@ -275,8 +312,12 @@ export default function NewBatchPaymentPage() {
       console.error("Failed to parse file:", error);
       setValidationResult(null);
       setSummary(null);
-      setValidationError(error instanceof Error ? error.message : "Failed to parse payment file");
-      toast.error(error instanceof Error ? error.message : "Failed to parse payment file");
+      setValidationError(
+        error instanceof Error ? error.message : "Failed to parse payment file",
+      );
+      toast.error(
+        error instanceof Error ? error.message : "Failed to parse payment file",
+      );
     }
   };
 
@@ -304,7 +345,9 @@ export default function NewBatchPaymentPage() {
     setStep(2);
   };
 
-  const estimatedFees = summary ? (summary.validCount * 0.0001).toFixed(4) : "0.0000";
+  const estimatedFees = summary
+    ? (summary.validCount * 0.0001).toFixed(4)
+    : "0.0000";
 
   return (
     <div className="space-y-6">
@@ -319,31 +362,34 @@ export default function NewBatchPaymentPage() {
 
       {/* Page Title */}
       <div>
-        <h1 className="text-3xl font-bold text-white mb-2">New Batch Payment</h1>
+        <h1 className="text-3xl font-bold text-white mb-2">
+          New Batch Payment
+        </h1>
         <p className="text-slate-400">
           Upload a payment file and send multiple crypto transactions securely.
         </p>
       </div>
 
-      {/* Wallet Connection */}
-      <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-4 flex items-center justify-between">
-        <div className="text-sm text-slate-400">
-          {publicKey ? "Wallet connected" : "Connect your wallet to get started"}
-        </div>
-        <ConnectWalletButton />
-      </div>
-
-      <BatchErrorBoundary storageKey="new_batch_state" onRestore={handleRestore}>
+      {!publicKey ? (
+        <DashboardWalletEmpty />
+      ) : (
+      <BatchErrorBoundary
+        storageKey="new_batch_state"
+        onRestore={handleRestore}
+      >
         {/* Stepper */}
         <div className="mb-8 pt-4">
           <div className="flex items-center justify-between relative max-w-2xl mx-auto">
             <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-0.5 bg-slate-800 -z-10" />
             <div
-              className="absolute left-0 top-1/2 -translate-y-1/2 h-0.5 bg-emerald-500 -z-10 transition-all duration-300"
+              className={`absolute left-0 top-1/2 -translate-y-1/2 h-0.5 bg-emerald-500 -z-10 transition-all ${motionCssDuration.fast}`}
               style={{ width: `${((step - 1) / (steps.length - 1)) * 100}%` }}
             />
             {steps.map((s) => (
-              <div key={s.id} className="flex flex-col items-center gap-2 bg-[#0B0F1A] px-2 md:px-4">
+              <div
+                key={s.id}
+                className="flex flex-col items-center gap-2 bg-[#0B0F1A] px-2 md:px-4"
+              >
                 <button
                   type="button"
                   aria-label={`Step ${s.id}: ${s.name}`}
@@ -355,13 +401,14 @@ export default function NewBatchPaymentPage() {
                       : step === s.id
                         ? "bg-[#0B0F1A] border-emerald-500 text-emerald-500"
                         : "bg-[#0B0F1A] border-slate-700 text-slate-500"
-                    }`}
+                  }`}
                 >
                   {step > s.id ? <Check className="w-4 h-4" /> : s.id}
                 </button>
                 <span
-                  className={`text-xs font-medium hidden sm:block ${step >= s.id ? "text-emerald-500" : "text-slate-500"
-                    }`}
+                  className={`text-xs font-medium hidden sm:block ${
+                    step >= s.id ? "text-emerald-500" : "text-slate-500"
+                  }`}
                 >
                   {s.name}
                 </span>
@@ -372,15 +419,24 @@ export default function NewBatchPaymentPage() {
 
         {/* Step 1: Entry */}
         {step === 1 && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <MotionSafe {...stepEnter} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-6">
-              <Tabs value={entryMode} onValueChange={(v) => setEntryMode(v as any)}>
+              <Tabs
+                value={entryMode}
+                onValueChange={(v) => setEntryMode(v as any)}
+              >
                 <TabsList className="bg-slate-900 border-slate-800 mb-4 p-1">
-                  <TabsTrigger value="upload" className="data-[state=active]:bg-emerald-500 data-[state=active]:text-white">
+                  <TabsTrigger
+                    value="upload"
+                    className="data-[state=active]:bg-emerald-500 data-[state=active]:text-white"
+                  >
                     <FileUp className="w-4 h-4 mr-2" />
                     File Upload
                   </TabsTrigger>
-                  <TabsTrigger value="manual" className="data-[state=active]:bg-emerald-500 data-[state=active]:text-white">
+                  <TabsTrigger
+                    value="manual"
+                    className="data-[state=active]:bg-emerald-500 data-[state=active]:text-white"
+                  >
                     <UserPlus className="w-4 h-4 mr-2" />
                     Manual Entry
                   </TabsTrigger>
@@ -389,14 +445,19 @@ export default function NewBatchPaymentPage() {
                 <TabsContent value="upload">
                   <Card className="bg-slate-900/50 border-slate-800">
                     <CardHeader>
-                      <CardTitle className="text-xl text-white">Upload Payment File</CardTitle>
+                      <CardTitle className="text-xl text-white">
+                        Upload Payment File
+                      </CardTitle>
                     </CardHeader>
                     <CardContent>
                       <FileUpload onFileSelect={handleFileSelect} />
                       {file && (
                         <div className="mt-4 text-sm text-slate-400">
                           Selected:
-                          <span className="text-white font-medium"> {file.name}</span>
+                          <span className="text-white font-medium">
+                            {" "}
+                            {file.name}
+                          </span>
                           {fileFormat && (
                             <span className="ml-2 text-emerald-500">
                               ({fileFormat.toUpperCase()})
@@ -425,7 +486,9 @@ export default function NewBatchPaymentPage() {
                 <TabsContent value="manual">
                   <Card className="bg-slate-900/50 border-slate-800">
                     <CardHeader>
-                      <CardTitle className="text-xl text-white">Manual Recipient Entry</CardTitle>
+                      <CardTitle className="text-xl text-white">
+                        Manual Recipient Entry
+                      </CardTitle>
                     </CardHeader>
                     <CardContent>
                       <ManualBatchEntry
@@ -459,15 +522,21 @@ export default function NewBatchPaymentPage() {
                 <CardContent className="space-y-3">
                   <div className="flex items-start gap-2 text-sm">
                     <Check className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
-                    <p className="text-slate-400">Use valid Stellar wallet addresses</p>
+                    <p className="text-slate-400">
+                      Use valid Stellar wallet addresses
+                    </p>
                   </div>
                   <div className="flex items-start gap-2 text-sm">
                     <Check className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
-                    <p className="text-slate-400">Verify amounts and asset types</p>
+                    <p className="text-slate-400">
+                      Verify amounts and asset types
+                    </p>
                   </div>
                   <div className="flex items-start gap-2 text-sm">
                     <Check className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
-                    <p className="text-slate-400">Test with small amounts first</p>
+                    <p className="text-slate-400">
+                      Test with small amounts first
+                    </p>
                   </div>
                   <button className="text-emerald-500 hover:text-emerald-400 text-sm flex items-center gap-1 mt-2">
                     <BookOpen className="w-3 h-3" />
@@ -476,17 +545,19 @@ export default function NewBatchPaymentPage() {
                 </CardContent>
               </Card>
             </div>
-          </div>
+          </MotionSafe>
         )}
 
         {/* Step 2: Validate */}
         {step === 2 && summary && validationResult && (
-          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <MotionSafe {...stepEnter} className="space-y-6">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2">
                 <Card className="bg-slate-900/50 border-slate-800">
                   <CardHeader>
-                    <CardTitle className="text-xl text-white">Validation Results</CardTitle>
+                    <CardTitle className="text-xl text-white">
+                      Validation Results
+                    </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="flex items-center justify-between p-4 bg-slate-950 border border-slate-800 rounded-lg">
@@ -495,8 +566,12 @@ export default function NewBatchPaymentPage() {
                           <Check className="h-5 w-5" />
                         </div>
                         <div>
-                          <div className="text-sm font-medium text-white">Valid Recipients</div>
-                          <div className="text-2xl font-bold text-emerald-500">{summary.validCount}</div>
+                          <div className="text-sm font-medium text-white">
+                            Valid Recipients
+                          </div>
+                          <div className="text-2xl font-bold text-emerald-500">
+                            {summary.validCount}
+                          </div>
                         </div>
                       </div>
                       {summary.invalidCount > 0 && (
@@ -505,8 +580,12 @@ export default function NewBatchPaymentPage() {
                             <AlertCircle className="h-5 w-5" />
                           </div>
                           <div>
-                            <div className="text-sm font-medium text-white">Invalid Rows</div>
-                            <div className="text-2xl font-bold text-red-500">{summary.invalidCount}</div>
+                            <div className="text-sm font-medium text-white">
+                              Invalid Rows
+                            </div>
+                            <div className="text-2xl font-bold text-red-500">
+                              {summary.invalidCount}
+                            </div>
                           </div>
                         </div>
                       )}
@@ -514,12 +593,20 @@ export default function NewBatchPaymentPage() {
 
                     <div className="grid grid-cols-2 gap-4">
                       <div className="p-4 bg-slate-950 border border-slate-800 rounded-lg">
-                        <div className="text-xs text-slate-500 uppercase font-bold mb-1">Total Amount</div>
-                        <div className="text-xl font-bold text-white">{summary.totalAmount} XLM</div>
+                        <div className="text-xs text-slate-500 uppercase font-bold mb-1">
+                          Total Amount
+                        </div>
+                        <div className="text-xl font-bold text-white">
+                          {summary.totalAmount} XLM
+                        </div>
                       </div>
                       <div className="p-4 bg-slate-950 border border-slate-800 rounded-lg">
-                        <div className="text-xs text-slate-500 uppercase font-bold mb-1">Est. Fees</div>
-                        <div className="text-xl font-bold text-white">{estimatedFees} XLM</div>
+                        <div className="text-xs text-slate-500 uppercase font-bold mb-1">
+                          Est. Fees
+                        </div>
+                        <div className="text-xl font-bold text-white">
+                          {estimatedFees} XLM
+                        </div>
                       </div>
                     </div>
                   </CardContent>
@@ -528,13 +615,16 @@ export default function NewBatchPaymentPage() {
               <div className="space-y-4">
                 <Card className="bg-slate-900/50 border-slate-800">
                   <CardHeader>
-                    <CardTitle className="text-lg text-white">Continue</CardTitle>
+                    <CardTitle className="text-lg text-white">
+                      Continue
+                    </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <p className="text-sm text-slate-400">
-                      Review and confirm your batch payment before submitting to the network.
+                      Review and confirm your batch payment before submitting to
+                      the network.
                     </p>
-                    <Button 
+                    <Button
                       className="w-full bg-emerald-500 hover:bg-emerald-600 text-white"
                       onClick={async () => {
                         await loadBatchMeta(validationResult.validPayments);
@@ -542,7 +632,9 @@ export default function NewBatchPaymentPage() {
                       }}
                       disabled={summary.validCount === 0 || batchMetaLoading}
                     >
-                      {batchMetaLoading ? "Estimating batch size..." : "Review Batch"}
+                      {batchMetaLoading
+                        ? "Estimating batch size..."
+                        : "Review Batch"}
                     </Button>
                   </CardContent>
                 </Card>
@@ -550,16 +642,19 @@ export default function NewBatchPaymentPage() {
             </div>
 
             {validationResult.invalidCount > 0 && (
-              <CsvValidationErrors validationResult={validationResult} maxVisibleErrors={5} />
+              <CsvValidationErrors
+                validationResult={validationResult}
+                maxVisibleErrors={5}
+              />
             )}
 
             <BatchDryRun result={validationResult} />
-          </div>
+          </MotionSafe>
         )}
 
         {/* Step 3: Review */}
         {step === 3 && summary && validationResult && (
-          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <MotionSafe {...stepEnter} className="space-y-6">
             <BatchReview
               payments={validationResult.validPayments}
               network={selectedNetwork}
@@ -573,9 +668,16 @@ export default function NewBatchPaymentPage() {
                 if (!publicKey) return;
                 setIsSubmitting(true);
                 try {
-                  const response = await fetch('/api/batch-submit', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                  const response = await fetch("/api/batch-submit", {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                      "Idempotency-Key": await buildBatchSubmitIdempotencyKey({
+                        payments: filteredPayments,
+                        network: selectedNetwork,
+                        publicKey,
+                      }),
+                    },
                     body: JSON.stringify({
                       payments: filteredPayments,
                       network: selectedNetwork,
@@ -584,7 +686,7 @@ export default function NewBatchPaymentPage() {
                   });
                   const data = await response.json();
                   if (!response.ok) {
-                    throw new Error(data.error || 'Failed to submit batch');
+                    throw new Error(data.error || "Failed to submit batch");
                   }
                   setJobId(data.jobId);
                   setJobStatus("queued");
@@ -592,21 +694,27 @@ export default function NewBatchPaymentPage() {
                   setTotalBatches(0);
                   startPolling(data.jobId, publicKey);
                 } catch (error) {
-                  console.error('Batch submission error:', error);
+                  console.error("Batch submission error:", error);
                   setIsSubmitting(false);
-                  toast.error(error instanceof Error ? error.message : 'Failed to submit batch');
+                  toast.error(
+                    error instanceof Error
+                      ? error.message
+                      : "Failed to submit batch",
+                  );
                 }
               }}
             />
-          </div>
+          </MotionSafe>
         )}
 
         {/* Processing progress — shown while batch job is running */}
         {isSubmitting && jobId && (
-          <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <MotionSafe {...stepEnter} className="space-y-4">
             <Card className="bg-slate-900/50 border-slate-800">
               <CardHeader>
-                <CardTitle className="text-lg text-white">Processing Batch</CardTitle>
+                <CardTitle className="text-lg text-white">
+                  Processing Batch
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <JobProgress
@@ -617,15 +725,17 @@ export default function NewBatchPaymentPage() {
                 />
               </CardContent>
             </Card>
-          </div>
+          </MotionSafe>
         )}
 
         {/* Step 4: Submit Confirmation */}
         {step === 4 && result && (
-          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <MotionSafe {...stepEnter} className="space-y-6">
             <Card className="bg-slate-900/50 border-slate-800">
               <CardHeader>
-                <CardTitle className="text-lg text-white">Batch Submitted</CardTitle>
+                <CardTitle className="text-lg text-white">
+                  Batch Submitted
+                </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center gap-2 text-emerald-400">
@@ -633,7 +743,8 @@ export default function NewBatchPaymentPage() {
                   <span>Your batch has been submitted successfully.</span>
                 </div>
                 <div className="text-sm text-slate-400">
-                  Batch ID: <span className="font-mono text-white">{result.batchId}</span>
+                  Batch ID:{" "}
+                  <span className="font-mono text-white">{result.batchId}</span>
                 </div>
                 <div className="text-sm text-slate-400">
                   Total Payments: {result.totalRecipients}
@@ -652,9 +763,10 @@ export default function NewBatchPaymentPage() {
                 </div>
               </CardContent>
             </Card>
-          </div>
+          </MotionSafe>
         )}
       </BatchErrorBoundary>
+      )}
     </div>
   );
 }

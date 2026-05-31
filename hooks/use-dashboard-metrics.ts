@@ -16,6 +16,7 @@ export interface DashboardMetrics {
   totalAmountSentTrend?: string;
   successRateTrend?: string;
   activeBatchesTrend?: string;
+  timeSeries?: DashboardMetricsTimeSeriesPoint[];
 }
 
 export function useDashboardMetrics(

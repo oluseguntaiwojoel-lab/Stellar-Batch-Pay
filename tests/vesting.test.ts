@@ -149,14 +149,14 @@ describe('buildDepositTransaction (#364)', () => {
     const { buildDepositTransaction } = await import('../lib/stellar/vesting');
     const sender = Keypair.random().publicKey();
     await expect(
-      // @ts-expect-error — deliberate boundary violation
       buildDepositTransaction(
         'CACONTRACTIDADDRESSPLACEHOLDERPLACEHOLDER',
         [payment(Keypair.random().publicKey(), '1')],
         1,
         2,
         1,
-        'futurenet',
+        // @ts-expect-error — deliberate boundary violation: 'invalid-network' must not satisfy the network union
+        'invalid-network',
         sender,
       ),
     ).rejects.toBeDefined();

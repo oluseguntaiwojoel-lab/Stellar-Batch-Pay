@@ -30,8 +30,8 @@ export function useBalances() {
       const server = horizonService.getServer(horizonNetwork);
       const account = await server.loadAccount(publicKey);
       const assetBalances: AssetBalance[] = account.balances
-        .filter((balance) => balance.balance && parseFloat(balance.balance) > 0)
-        .map((balance) => ({
+        .filter((balance) => balance.balance && parseFloat(balance.balance) > 0 && balance.asset_type !== "liquidity_pool_shares")
+        .map((balance: any) => ({
           assetCode: balance.asset_type === "native" ? "XLM" : balance.asset_code,
           assetIssuer:
             balance.asset_type === "native" ? undefined : balance.asset_issuer,

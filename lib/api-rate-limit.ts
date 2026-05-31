@@ -4,7 +4,7 @@ import path from "path";
 import crypto from "crypto";
 
 type Tier = "free" | "pro" | "enterprise";
-type EndpointKey = "batch-build" | "batch-submit" | "batch-submit-signed" | "webhook-register";
+type EndpointKey = "batch-build" | "batch-submit" | "batch-submit-signed" | "webhook-register" | "tx-status" | "dashboard-metrics";
 
 type EndpointLimit = {
   free: number;
@@ -80,6 +80,8 @@ const DEFAULT_LIMITS: Record<EndpointKey, EndpointLimit> = {
   "batch-submit": { free: 5, pro: 15, enterprise: 45, windowMs: 60_000 },
   "batch-submit-signed": { free: 5, pro: 15, enterprise: 45, windowMs: 60_000 },
   "webhook-register": { free: 3, pro: 10, enterprise: 30, windowMs: 60_000 },
+  "tx-status": { free: 30, pro: 100, enterprise: 300, windowMs: 60_000 },
+  "dashboard-metrics": { free: 20, pro: 60, enterprise: 180, windowMs: 60_000 },
 };
 
 const endpointLimits: Record<EndpointKey, EndpointLimit> = {
@@ -93,6 +95,8 @@ const endpointLimits: Record<EndpointKey, EndpointLimit> = {
     "webhook-register",
     DEFAULT_LIMITS["webhook-register"],
   ),
+  "tx-status": tunedLimit("tx-status", DEFAULT_LIMITS["tx-status"]),
+  "dashboard-metrics": tunedLimit("dashboard-metrics", DEFAULT_LIMITS["dashboard-metrics"]),
 };
 
 const apiKeyTierMap: Record<string, Tier> = (() => {
@@ -172,6 +176,7 @@ export function applyRateLimit(request: NextRequest, endpoint: EndpointKey): {
   blocked: boolean;
   remaining: number;
   retryAfterSec: number;
+  resetAt: number;
   limit: number;
   response?: NextResponse;
 } {
@@ -185,24 +190,26 @@ export function applyRateLimit(request: NextRequest, endpoint: EndpointKey): {
   const row = db.prepare("SELECT * FROM rate_buckets WHERE key = ?").get(key) as RateBucketRow | undefined;
 
   if (!row || now >= row.resetAt) {
-    const resetAt = now + policy.windowMs;
+    const resetAtMs = now + policy.windowMs;
     const remaining = limit - 1;
     db.prepare(`
       INSERT OR REPLACE INTO rate_buckets
       (key, tier, endpoint, remaining, limit, resetAt, windowMs, updatedAt)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(key, tier, endpoint, remaining, limit, resetAt, policy.windowMs, new Date().toISOString());
+    `).run(key, tier, endpoint, remaining, limit, resetAtMs, policy.windowMs, new Date().toISOString());
 
     return {
       blocked: false,
       remaining: Math.max(0, remaining),
       retryAfterSec: Math.ceil(policy.windowMs / 1000),
+      resetAt: Math.ceil(resetAtMs / 1000),
       limit,
     };
   }
 
   if (row.remaining <= 0) {
     const retryAfterSec = Math.max(1, Math.ceil((row.resetAt - now) / 1000));
+    const resetAtSec = Math.ceil(row.resetAt / 1000);
     const response = NextResponse.json(
       { error: "Too Many Requests", detail: "Rate limit exceeded for this endpoint." },
       { status: 429 },
@@ -210,31 +217,55 @@ export function applyRateLimit(request: NextRequest, endpoint: EndpointKey): {
     response.headers.set("Retry-After", String(retryAfterSec));
     response.headers.set("X-RateLimit-Remaining", "0");
     response.headers.set("X-RateLimit-Limit", String(limit));
-    return { blocked: true, remaining: 0, retryAfterSec, limit, response };
+    response.headers.set("X-RateLimit-Reset", String(resetAtSec));
+    return { blocked: true, remaining: 0, retryAfterSec, resetAt: resetAtSec, limit, response };
+  }
+
+  // Atomic decrement: only decrements when remaining > 0, preventing races under concurrency
+  const updateResult = db.prepare(`
+    UPDATE rate_buckets SET remaining = remaining - 1, updatedAt = ? WHERE key = ? AND remaining > 0
+  `).run(new Date().toISOString(), key);
+
+  if (updateResult.changes === 0) {
+    // Another concurrent request consumed the last token between our SELECT and UPDATE
+    const retryAfterSec = Math.max(1, Math.ceil((row.resetAt - now) / 1000));
+    const resetAtSec = Math.ceil(row.resetAt / 1000);
+    const response = NextResponse.json(
+      { error: "Too Many Requests", detail: "Rate limit exceeded for this endpoint." },
+      { status: 429 },
+    );
+    response.headers.set("Retry-After", String(retryAfterSec));
+    response.headers.set("X-RateLimit-Remaining", "0");
+    response.headers.set("X-RateLimit-Limit", String(limit));
+    response.headers.set("X-RateLimit-Reset", String(resetAtSec));
+    return { blocked: true, remaining: 0, retryAfterSec, resetAt: resetAtSec, limit, response };
   }
 
   const newRemaining = row.remaining - 1;
-  db.prepare(`
-    UPDATE rate_buckets SET remaining = ?, updatedAt = ? WHERE key = ?
-  `).run(newRemaining, new Date().toISOString(), key);
-
   const retryAfterSec = Math.max(1, Math.ceil((row.resetAt - now) / 1000));
+  const resetAtSec = Math.ceil(row.resetAt / 1000);
   return {
     blocked: false,
     remaining: newRemaining,
     retryAfterSec,
+    resetAt: resetAtSec,
     limit,
   };
 }
 
 export function setRateLimitHeaders(response: NextResponse, state: {
+  blocked: boolean;
   remaining: number;
   retryAfterSec: number;
+  resetAt: number;
   limit: number;
 }) {
   response.headers.set("X-RateLimit-Remaining", String(Math.max(0, state.remaining)));
   response.headers.set("X-RateLimit-Limit", String(state.limit));
-  response.headers.set("Retry-After", String(state.retryAfterSec));
+  response.headers.set("X-RateLimit-Reset", String(state.resetAt));
+  if (state.blocked) {
+    response.headers.set("Retry-After", String(state.retryAfterSec));
+  }
   return response;
 }
 

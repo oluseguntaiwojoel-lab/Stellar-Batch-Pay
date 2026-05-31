@@ -143,6 +143,41 @@ Update your frontend `.env` file with the newly deployed Contract ID:
 NEXT_PUBLIC_CONTRACT_ID="C..."
 ```
 
+## SQLite persistence (batch jobs and rate limits)
+
+The API stores batch jobs in SQLite via `better-sqlite3`. By default:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `JOB_STORE_PATH` | `./data/jobs.db` | Durable batch job state |
+| `RATE_LIMIT_DB_PATH` | `./data/rate-limit.db` | Per-key API rate limiting |
+
+Vercel serverless functions use a read-only filesystem except `/tmp`. Without
+explicit paths, job persistence can fail silently or reset on every cold start.
+
+**Recommended hosting:**
+
+1. **Serverful Node** — long-running `next start`, PM2, or Docker with a writable `data/` directory.
+2. **Persistent volume** — mount a volume at `data/` (Kubernetes PVC, ECS EFS, etc.).
+3. **Managed SQL** — replace SQLite with Turso, Postgres, or another shared store (requires application changes).
+
+**Ephemeral demo on serverless** (data is lost between invocations):
+
+```bash
+export JOB_STORE_PATH=/tmp/jobs.db
+export RATE_LIMIT_DB_PATH=/tmp/rate-limit.db
+```
+
+**Health check** — verify directories are writable before routing traffic:
+
+```bash
+curl -s http://localhost:3000/api/health
+# Returns 200 when job_store and rate_limit paths are writable, 503 otherwise
+```
+
+Set `JOB_STORE_PATH` and `RATE_LIMIT_DB_PATH` in the same environment as your
+API routes (Vercel project settings, Docker env, or systemd unit).
+
 ## Hosting Options
 
 ### Option 1: Vercel (Recommended for Next.js)
@@ -367,25 +402,29 @@ Sentry.init({
 // Errors are automatically captured
 ```
 
-### Log Aggregation
+### Log Aggregation & Structured Request Logging
 
-Send logs to centralized service:
+The application includes a structured JSON logger located at `lib/logger.ts` and Next.js middleware that assigns a unique correlation ID (`x-request-id`) to every incoming API request. The logger automatically anonymizes sensitive Stellar public keys (e.g., truncating them to `GB3...XYZ`) and outputs logs in JSON format:
 
-```typescript
-// Example with Winston and ELK Stack
-import winston from 'winston';
-
-const logger = winston.createLogger({
-  transports: [
-    new winston.transports.File({ filename: 'error.log', level: 'error' }),
-    new winston.transports.File({ filename: 'combined.log' }),
-    new winston.transports.Http({
-      host: 'logs.example.com',
-      path: '/api/logs',
-    }),
-  ],
-});
+```json
+{"level":"info","timestamp":"2026-05-31T20:00:00.000Z","requestId":"a4f9c8f0-1e0f-4d77-9db6-9afcd21b8d05","jobId":"5f8b3c20-3b02-4e63-bd4f-3f6291a13bfd","publicKey":"GB3...XYZ","network":"testnet","msg":"Batch submit job queued and background worker triggered"}
 ```
+
+#### Datadog / CloudWatch Integration
+
+1. **Datadog log ingestion**:
+   - Ensure the Next.js runtime environment sends stdout/stderr logs directly.
+   - In Datadog log configuration, enable the JSON parser so fields like `level`, `requestId`, and `jobId` are automatically parsed into searchable attributes.
+   - Configure a mapping for standard attributes: map `level` to status, `timestamp` to date, and `msg` to message.
+
+2. **AWS CloudWatch**:
+   - Structured JSON logs are automatically parsed by CloudWatch logs.
+   - Use CloudWatch Logs Insights to query and trace invocations across serverless instances using `requestId` or `jobId`:
+     ```sql
+     fields @timestamp, level, requestId, jobId, msg
+     | filter requestId = "a4f9c8f0-1e0f-4d77-9db6-9afcd21b8d05"
+     | sort @timestamp asc
+     ```
 
 ## Database Setup (Optional)
 
@@ -623,7 +662,7 @@ pm2 stop stellar-bulk-pay
 git checkout main && npm run build && pm2 start stellar-bulk-pay
 
 # 5. Verify
-curl http://localhost:3000/health
+curl http://localhost:3000/api/health
 ```
 
 ## Support

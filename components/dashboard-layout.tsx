@@ -8,7 +8,7 @@ import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar"
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
     <SidebarProvider defaultOpen={true}>
-      <div className="flex min-h-screen w-full bg-[#0B0F1A]">
+      <div className="flex min-h-screen w-full bg-background text-foreground">
         <AppSidebar />
         <SidebarInset className="flex flex-col bg-transparent">
           <AppHeader />

@@ -24,7 +24,8 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const job = getJob(jobId);
+    const publicKey = searchParams.get("publicKey") ?? undefined;
+    const job = getJob(jobId, publicKey);
 
     if (!job || !job.result) {
       return safeJsonResponse(

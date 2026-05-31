@@ -63,8 +63,9 @@ export function useTrustlines(assetCode: string, assetIssuer?: string) {
             try {
               const account = await server.loadAccount(address);
               const hasTrustline = account.balances.some(
-                (balance) =>
+                (balance: any) =>
                   balance.asset_type !== "native" &&
+                  balance.asset_type !== "liquidity_pool_shares" &&
                   balance.asset_code === assetCode &&
                   balance.asset_issuer === assetIssuer,
               );

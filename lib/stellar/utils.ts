@@ -1,4 +1,5 @@
 import Big from 'big.js'
+import { Asset as StellarAsset } from 'stellar-sdk'
 
 /**
  * Formats a Stellar amount string or number to show up to 7 decimal places
@@ -113,4 +114,43 @@ export function sumStellarAmounts(amounts: string[]): Big {
     (acc, amount) => acc.plus(parseStellarAmount(amount)),
     new Big(0)
   )
+}
+
+/**
+ * Parses an asset string into a stellar-sdk Asset instance.
+ * Accepts "XLM" / "native" for the native asset, or "CODE:ISSUER" for issued assets.
+ *
+ * @param asset - Asset string or object with { code, issuer }
+ * @returns A stellar-sdk Asset instance
+ * @throws {Error} If the input cannot be resolved to a valid asset
+ *
+ * @example
+ * parseAsset("XLM")                          // → Asset.native()
+ * parseAsset("USDC:GBUQWP3B...")             // → new Asset("USDC", "GBUQWP3B...")
+ * parseAsset({ code: "USDC", issuer: "G…" }) // → new Asset("USDC", "G…")
+ */
+export function parseAsset(asset: string | { code: string; issuer: string | null }): StellarAsset {
+  if (typeof asset === 'string') {
+    if (asset === 'XLM' || asset === 'native') {
+      return StellarAsset.native()
+    }
+    const colonIndex = asset.indexOf(':')
+    if (colonIndex === -1) {
+      throw new Error(`Invalid asset string "${asset}": expected "CODE:ISSUER" or "XLM"`)
+    }
+    const code = asset.slice(0, colonIndex)
+    const issuer = asset.slice(colonIndex + 1)
+    if (!code || !issuer) {
+      throw new Error(`Invalid asset string "${asset}": code and issuer must be non-empty`)
+    }
+    return new StellarAsset(code, issuer)
+  }
+
+  if (!asset.code || asset.issuer === undefined) {
+    throw new Error('Invalid asset object: must provide code and issuer')
+  }
+  if (asset.issuer === null || asset.code === 'XLM') {
+    return StellarAsset.native()
+  }
+  return new StellarAsset(asset.code, asset.issuer)
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { FileUpload } from "@/components/file-upload";
 import { BatchSummary } from "@/components/batch-summary";
@@ -9,6 +9,7 @@ import { ConnectWalletButton } from "@/components/connect-wallet-button";
 import { useFreighter } from "@/hooks/use-freighter";
 import { useToast } from "@/components/ui/use-toast";
 import { parseInput, parseFileStream, validatePaymentInstructions } from "@/lib/stellar";
+import type { StreamValidationResult } from "@/lib/stellar/parser";
 import { CsvValidationErrors } from "@/components/csv-validation-errors";
 import type {
   PaymentInstruction,
@@ -59,9 +60,25 @@ export default function Home() {
           onProgress: (count) => {
             setParsedCount(count);
           },
-          onComplete: (parsed) => {
-            setPayments(parsed);
-            setState("preview");
+          onComplete: (result: StreamValidationResult) => {
+            setPayments(result.payments);
+            if (result.errors.length > 0) {
+              // Surface all collected errors before allowing submission.
+              setValidationResult({
+                rows: result.errors.map(err => ({
+                  rowNumber: err.row,
+                  instruction: { address: '', amount: '', asset: '' },
+                  valid: false,
+                  isDuplicate: false,
+                  error: err.message,
+                })),
+                validPayments: result.payments,
+                invalidCount: result.errors.length,
+              });
+              setState("upload");
+            } else {
+              setState("preview");
+            }
           },
           onError: (err) => {
             setError(err.message);

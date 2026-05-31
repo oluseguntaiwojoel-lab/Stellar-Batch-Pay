@@ -317,6 +317,20 @@ components/
 └── results-display.tsx# Show results after sending
 ```
 
+### API
+
+The main batch submission endpoint accepts an optional `Idempotency-Key` header.
+
+```http
+POST /api/batch-submit
+Content-Type: application/json
+Idempotency-Key: <stable-request-key>
+```
+
+If the same key is replayed with the same request body within 24 hours, the API returns the original `202` response and reuses the same `jobId`. If the same key is reused with a different body, the API returns `409 Conflict`.
+
+This is especially useful for retry-safe payroll submissions where a browser refresh, double-click, or proxy retry should not enqueue a second payout job.
+
 ### Key Functions
 
 **Validate payments:**

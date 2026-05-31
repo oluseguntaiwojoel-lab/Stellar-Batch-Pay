@@ -75,6 +75,18 @@ describe("Job Store — createJob", () => {
     expect(job?.publicKey).toBe(OWNER_PUBLIC_KEY);
   });
 
+  test("hydrates signedTransactions from the stored row", () => {
+    const signedTransactions = ["AAAA", "BBBB"];
+    const jobId = createJob(
+      samplePayments,
+      "testnet",
+      OWNER_PUBLIC_KEY,
+      signedTransactions,
+    );
+    const job = getJob(jobId);
+    expect(job?.signedTransactions).toEqual(signedTransactions);
+  });
+
   test("sets createdAt and updatedAt as ISO strings", () => {
     const jobId = createJob(samplePayments, "testnet", OWNER_PUBLIC_KEY);
     const job = getJob(jobId);
@@ -213,5 +225,25 @@ describe("Job Store — getAllJobs / countJobs", () => {
     for (let i = 0; i < 5; i++) createJob(samplePayments, "testnet", OWNER_PUBLIC_KEY);
     const page = getAllJobs({ limit: 3, offset: 0 });
     expect(page.length).toBeLessThanOrEqual(3);
+  });
+
+  test("search filter matches jobId substring", () => {
+    const jobId = createJob(samplePayments, "testnet", OWNER_PUBLIC_KEY);
+    const matches = getAllJobs({ search: jobId.slice(0, 8), publicKey: OWNER_PUBLIC_KEY });
+    expect(matches.some((job) => job.jobId === jobId)).toBe(true);
+  });
+
+  test("search filter matches recipient address in payments JSON", () => {
+    const address = samplePayments[0]?.address ?? "GSEARCHMATCH";
+    const jobId = createJob(samplePayments, "testnet", OWNER_PUBLIC_KEY);
+    const matches = getAllJobs({ search: address, publicKey: OWNER_PUBLIC_KEY });
+    expect(matches.some((job) => job.jobId === jobId)).toBe(true);
+  });
+
+  test("from date filter excludes older jobs", () => {
+    const jobId = createJob(samplePayments, "testnet", OWNER_PUBLIC_KEY);
+    const futureFrom = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    const matches = getAllJobs({ from: futureFrom, publicKey: OWNER_PUBLIC_KEY });
+    expect(matches.some((job) => job.jobId === jobId)).toBe(false);
   });
 });
