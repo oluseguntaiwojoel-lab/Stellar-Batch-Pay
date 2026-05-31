@@ -143,6 +143,41 @@ Update your frontend `.env` file with the newly deployed Contract ID:
 NEXT_PUBLIC_CONTRACT_ID="C..."
 ```
 
+## SQLite persistence (batch jobs and rate limits)
+
+The API stores batch jobs in SQLite via `better-sqlite3`. By default:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `JOB_STORE_PATH` | `./data/jobs.db` | Durable batch job state |
+| `RATE_LIMIT_DB_PATH` | `./data/rate-limit.db` | Per-key API rate limiting |
+
+Vercel serverless functions use a read-only filesystem except `/tmp`. Without
+explicit paths, job persistence can fail silently or reset on every cold start.
+
+**Recommended hosting:**
+
+1. **Serverful Node** — long-running `next start`, PM2, or Docker with a writable `data/` directory.
+2. **Persistent volume** — mount a volume at `data/` (Kubernetes PVC, ECS EFS, etc.).
+3. **Managed SQL** — replace SQLite with Turso, Postgres, or another shared store (requires application changes).
+
+**Ephemeral demo on serverless** (data is lost between invocations):
+
+```bash
+export JOB_STORE_PATH=/tmp/jobs.db
+export RATE_LIMIT_DB_PATH=/tmp/rate-limit.db
+```
+
+**Health check** — verify directories are writable before routing traffic:
+
+```bash
+curl -s http://localhost:3000/api/health
+# Returns 200 when job_store and rate_limit paths are writable, 503 otherwise
+```
+
+Set `JOB_STORE_PATH` and `RATE_LIMIT_DB_PATH` in the same environment as your
+API routes (Vercel project settings, Docker env, or systemd unit).
+
 ## Hosting Options
 
 ### Option 1: Vercel (Recommended for Next.js)
@@ -623,7 +658,7 @@ pm2 stop stellar-bulk-pay
 git checkout main && npm run build && pm2 start stellar-bulk-pay
 
 # 5. Verify
-curl http://localhost:3000/health
+curl http://localhost:3000/api/health
 ```
 
 ## Support

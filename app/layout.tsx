@@ -1,7 +1,7 @@
 import React from "react";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { Analytics } from "@vercel/analytics/next";
+import { ConditionalAnalytics } from "@/components/conditional-analytics";
 import StellarFooter from "@/components/landing/StellarFooter";
 import { Toaster } from "@/components/ui/toaster";
 import { WalletProvider } from "@/contexts/WalletContext";
@@ -57,7 +57,7 @@ export default function RootLayout({
             </AddressBookProvider>
           </WalletProvider>
           <Toaster />
-          <Analytics />
+          <ConditionalAnalytics />
         </ThemeProvider>
       </body>
     </html>

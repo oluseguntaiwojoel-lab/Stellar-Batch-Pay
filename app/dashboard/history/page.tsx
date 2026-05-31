@@ -2,6 +2,9 @@
 
 import { useState, useCallback } from "react";
 import { MotionSafe } from "@/components/motion-safe";
+import { DashboardWalletEmpty } from "@/components/dashboard/dashboard-wallet-empty";
+import { pageEnter } from "@/lib/motion-tokens";
+import { useWallet } from "@/contexts/WalletContext";
 import {
   HistoryFilterBar,
   DEFAULT_HISTORY_FILTERS,
@@ -44,6 +47,7 @@ function computeMetrics(batches: HistoricalBatch[]) {
 }
 
 export default function HistoryPage() {
+  const { publicKey } = useWallet();
   const [filters, setFilters] = useState<HistoryFilterValues>(DEFAULT_HISTORY_FILTERS);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -68,12 +72,7 @@ export default function HistoryPage() {
   const metricsData = computeMetrics(loadedBatches);
 
   return (
-    <MotionSafe
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.25 }}
-      className="space-y-8"
-    >
+    <MotionSafe {...pageEnter} className="space-y-8">
       <div className="flex flex-col gap-2">
         <h1 className="text-3xl font-bold tracking-tight text-white">Batch Payment History</h1>
         <p className="text-gray-400">
@@ -81,6 +80,10 @@ export default function HistoryPage() {
         </p>
       </div>
 
+      {!publicKey ? (
+        <DashboardWalletEmpty />
+      ) : (
+        <>
       <MetricsGrid data={metricsData} />
 
       <Card className="border-[#1F2937] bg-[#121827] shadow-lg">
@@ -112,6 +115,8 @@ export default function HistoryPage() {
       </Card>
 
       <HistoryExportCenter />
+        </>
+      )}
     </MotionSafe>
   );
 }

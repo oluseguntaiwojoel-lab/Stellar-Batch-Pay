@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Upload, Calendar, Clock, AlertCircle, CheckCircle } from "lucide-react";
+import { DashboardWalletEmpty } from "@/components/dashboard/dashboard-wallet-empty";
 import { useWallet } from "@/contexts/WalletContext";
 import { toast } from "sonner";
 import type { PaymentInstruction } from "@/lib/stellar/types";
@@ -256,7 +257,10 @@ export default function VestingPage() {
         </p>
       </div>
 
-      {/* Tabs */}
+      {!publicKey ? (
+        <DashboardWalletEmpty />
+      ) : (
+        <>
       <div className="flex gap-2 border-b border-[#1F2937]">
         <button
           onClick={() => setActiveTab("deposit")}
@@ -523,6 +527,8 @@ export default function VestingPage() {
             </CardContent>
           </Card>
         </div>
+      )}
+        </>
       )}
     </div>
   );

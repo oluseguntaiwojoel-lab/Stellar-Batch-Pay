@@ -24,6 +24,8 @@ import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { MotionSafe } from "@/components/motion-safe";
+import { DashboardWalletEmpty } from "@/components/dashboard/dashboard-wallet-empty";
+import { pageEnter } from "@/lib/motion-tokens";
 import { ArrowLeft, Copy, ExternalLink, Download, FileText, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -136,12 +138,7 @@ export default function BatchDetailPage({
   const exportRows = data ? buildBatchExportRows(data) : [];
 
   return (
-    <MotionSafe
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.25 }}
-      className="space-y-6"
-    >
+    <MotionSafe {...pageEnter} className="space-y-6">
       <Link
         href="/dashboard/history"
         className="inline-flex items-center gap-2 text-sm text-gray-400 hover:text-white"
@@ -183,9 +180,7 @@ export default function BatchDetailPage({
               <Loader2 className="h-4 w-4 animate-spin" /> Loading job…
             </div>
           )}
-          {!loading && !publicKey && (
-            <p className="text-gray-400">Connect your wallet to view batch details.</p>
-          )}
+          {!loading && !publicKey && <DashboardWalletEmpty className="border-none bg-transparent" />}
           {error && <p className="text-red-300">{error}</p>}
           {data && (
             <div className="grid sm:grid-cols-3 gap-4 text-sm">

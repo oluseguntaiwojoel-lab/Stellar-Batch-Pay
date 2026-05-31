@@ -4,7 +4,9 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { FileUpload } from "@/components/file-upload";
-import { ConnectWalletButton } from "@/components/connect-wallet-button";
+import { DashboardWalletEmpty } from "@/components/dashboard/dashboard-wallet-empty";
+import { MotionSafe } from "@/components/motion-safe";
+import { motionCssDuration, stepEnter } from "@/lib/motion-tokens";
 import { BatchDryRun } from "@/components/dashboard/BatchDryRun";
 import { CsvValidationErrors } from "@/components/csv-validation-errors";
 import { JobProgress } from "@/components/job-progress";
@@ -362,16 +364,9 @@ export default function NewBatchPaymentPage() {
         </p>
       </div>
 
-      {/* Wallet Connection */}
-      <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-4 flex items-center justify-between">
-        <div className="text-sm text-slate-400">
-          {publicKey
-            ? "Wallet connected"
-            : "Connect your wallet to get started"}
-        </div>
-        <ConnectWalletButton />
-      </div>
-
+      {!publicKey ? (
+        <DashboardWalletEmpty />
+      ) : (
       <BatchErrorBoundary
         storageKey="new_batch_state"
         onRestore={handleRestore}
@@ -381,7 +376,7 @@ export default function NewBatchPaymentPage() {
           <div className="flex items-center justify-between relative max-w-2xl mx-auto">
             <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-0.5 bg-slate-800 -z-10" />
             <div
-              className="absolute left-0 top-1/2 -translate-y-1/2 h-0.5 bg-emerald-500 -z-10 transition-all duration-300"
+              className={`absolute left-0 top-1/2 -translate-y-1/2 h-0.5 bg-emerald-500 -z-10 transition-all ${motionCssDuration.fast}`}
               style={{ width: `${((step - 1) / (steps.length - 1)) * 100}%` }}
             />
             {steps.map((s) => (
@@ -418,7 +413,7 @@ export default function NewBatchPaymentPage() {
 
         {/* Step 1: Entry */}
         {step === 1 && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <MotionSafe {...stepEnter} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-6">
               <Tabs
                 value={entryMode}
@@ -543,12 +538,12 @@ export default function NewBatchPaymentPage() {
                 </CardContent>
               </Card>
             </div>
-          </div>
+          </MotionSafe>
         )}
 
         {/* Step 2: Validate */}
         {step === 2 && summary && validationResult && (
-          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <MotionSafe {...stepEnter} className="space-y-6">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2">
                 <Card className="bg-slate-900/50 border-slate-800">
@@ -647,12 +642,12 @@ export default function NewBatchPaymentPage() {
             )}
 
             <BatchDryRun result={validationResult} />
-          </div>
+          </MotionSafe>
         )}
 
         {/* Step 3: Review */}
         {step === 3 && summary && validationResult && (
-          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <MotionSafe {...stepEnter} className="space-y-6">
             <BatchReview
               payments={validationResult.validPayments}
               network={selectedNetwork}
@@ -702,12 +697,12 @@ export default function NewBatchPaymentPage() {
                 }
               }}
             />
-          </div>
+          </MotionSafe>
         )}
 
         {/* Processing progress — shown while batch job is running */}
         {isSubmitting && jobId && (
-          <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <MotionSafe {...stepEnter} className="space-y-4">
             <Card className="bg-slate-900/50 border-slate-800">
               <CardHeader>
                 <CardTitle className="text-lg text-white">
@@ -723,12 +718,12 @@ export default function NewBatchPaymentPage() {
                 />
               </CardContent>
             </Card>
-          </div>
+          </MotionSafe>
         )}
 
         {/* Step 4: Submit Confirmation */}
         {step === 4 && result && (
-          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <MotionSafe {...stepEnter} className="space-y-6">
             <Card className="bg-slate-900/50 border-slate-800">
               <CardHeader>
                 <CardTitle className="text-lg text-white">
@@ -761,9 +756,10 @@ export default function NewBatchPaymentPage() {
                 </div>
               </CardContent>
             </Card>
-          </div>
+          </MotionSafe>
         )}
       </BatchErrorBoundary>
+      )}
     </div>
   );
 }

@@ -59,6 +59,24 @@ The project follows a clean layered architecture with clear separation of concer
 - Manages sequence numbers and error handling
 - Returns structured results
 
+## Motion vocabulary
+
+Dashboard and marketing UI share `MotionSafe` (`components/motion-safe.tsx`),
+which disables Framer Motion when `prefers-reduced-motion` is set.
+
+Presets live in `lib/motion-tokens.ts`:
+
+| Preset | Use |
+|--------|-----|
+| `pageEnter` | Dashboard page shells (history, batch detail) |
+| `stepEnter` | New-batch wizard steps |
+| `fadeInUpMedium` | Metric cards and staggered grids |
+| `motionCssDuration` | Tailwind `transition-all` durations aligned with tokens |
+
+Prefer spreading a preset onto `MotionSafe` instead of ad hoc `animate-in`
+utilities or raw `motion.div` on data-heavy routes. Utilitarian tables can
+omit entrance animation entirely.
+
 ## Key Design Decisions
 
 ### 1. No ORM or Additional Abstraction
