@@ -99,6 +99,7 @@ export async function buildDepositTransaction(
   payments: PaymentInstruction[],
   startTime: number,
   endTime: number,
+  cliffTime: number,
   vestingStep: number,
   network: 'testnet' | 'mainnet',
   publicKey: string
@@ -132,6 +133,7 @@ export async function buildDepositTransaction(
       amountVecToScVal(amounts),                  // amounts: Vec<i128>
       nativeToScVal(BigInt(startTime), { type: 'u64' }), // start_time: u64
       nativeToScVal(BigInt(endTime), { type: 'u64' }),   // end_time: u64
+      nativeToScVal(BigInt(cliffTime), { type: 'u64' }), // cliff_time: u64
       nativeToScVal(BigInt(vestingStep), { type: 'u64' }), // vesting_step: u64
       xdr.ScVal.scvVec(memos.map(m => nativeToScVal(m, { type: 'string' }))) // memos: Vec<String>
     );
