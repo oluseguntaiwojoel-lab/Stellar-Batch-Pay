@@ -40,6 +40,8 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { BatchErrorBoundary } from "@/components/BatchErrorBoundary";
 import { canonicalizeIdempotencyPayload } from "@/lib/idempotency";
+
+import { BatchFlowProvider, useBatchFlow } from "@/contexts/BatchFlowContext";
 import { t } from "@/lib/i18n";
 
 async function buildBatchSubmitIdempotencyKey(body: {
@@ -96,176 +98,36 @@ export default function NewBatchPaymentPage() {
   const [manualCanContinue, setManualCanContinue] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Sync state to sessionStorage to prevent data loss on render crashes
-  useEffect(() => {
-    const stateToSave = {
-      step,
-      selectedNetwork,
-      validationResult,
-      summary,
-      manualPayments,
-      entryMode,
-    };
-    if (validationResult || manualPayments.length > 0) {
-      sessionStorage.setItem("new_batch_state", JSON.stringify(stateToSave));
-    }
-  }, [
+export function NewBatchPaymentPageContent() {
+  const {
     step,
+    setStep,
     selectedNetwork,
+    file,
+    fileFormat,
     validationResult,
+    validationError,
     summary,
+    isSubmitting,
+    result,
+    jobId,
+    jobStatus,
+    completedBatches,
+    totalBatches,
     manualPayments,
+    setManualPayments,
     entryMode,
-  ]);
+    setEntryMode,
+    batchMeta,
+    batchMetaLoading,
+    handleRetryFailed,
+    handleFileSelect,
+    handleManualContinue,
+    loadBatchMeta,
+    handleRestore,
+  } = useBatchFlow();
 
-  // Restore state from sessionStorage
-  const handleRestore = (saved: any) => {
-    if (saved.step) setStep(saved.step);
-    if (saved.selectedNetwork) setSelectedNetwork(saved.selectedNetwork);
-    if (saved.validationResult) setValidationResult(saved.validationResult);
-    if (saved.summary) setSummary(saved.summary);
-    if (saved.manualPayments) setManualPayments(saved.manualPayments);
-    if (saved.entryMode) setEntryMode(saved.entryMode);
-  };
-
-  useEffect(() => {
-    const saved = sessionStorage.getItem("new_batch_state");
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        handleRestore(parsed);
-      } catch (e) {
-        console.error("Failed to restore new_batch_state:", e);
-      }
-    }
-  }, []);
-
-  const stopPolling = useCallback(() => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
-  }, []);
-
-  const startPolling = useCallback(
-    (id: string, ownerPublicKey: string) => {
-      stopPolling();
-      pollRef.current = setInterval(async () => {
-        try {
-          const params = new URLSearchParams({ publicKey: ownerPublicKey });
-          const res = await fetch(
-            `/api/batch-status/${id}?${params.toString()}`,
-          );
-          if (!res.ok) return;
-          const data = await res.json();
-          setJobStatus(data.status);
-          setCompletedBatches(data.completedBatches ?? 0);
-          setTotalBatches(data.totalBatches ?? 0);
-          if (data.status === "completed") {
-            stopPolling();
-            setResult(data.result ?? null);
-            setIsSubmitting(false);
-            setStep(4);
-            toast.success("Batch submitted successfully");
-          } else if (data.status === "failed") {
-            stopPolling();
-            setIsSubmitting(false);
-            toast.error(data.error ?? "Batch processing failed");
-          }
-        } catch {
-          // ignore transient fetch errors
-        }
-      }, 2000);
-    },
-    [stopPolling],
-  );
-
-  useEffect(() => () => stopPolling(), [stopPolling]);
-  const [skippedIndices, setSkippedIndices] = useState<number[]>([]);
-  const [convertedIndices, setConvertedIndices] = useState<number[]>([]);
-  const [batchMeta, setBatchMeta] = useState<BatchMetaEntry[] | undefined>();
-  const [batchMetaLoading, setBatchMetaLoading] = useState(false);
   const { publicKey } = useWallet();
-
-  const loadBatchMeta = useCallback(
-    async (payments: PaymentInstruction[]) => {
-      if (!publicKey || payments.length === 0) {
-        setBatchMeta(undefined);
-        return;
-      }
-
-      setBatchMetaLoading(true);
-      try {
-        const response = await fetch("/api/batch-build", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            payments,
-            network: selectedNetwork,
-            publicKey,
-          }),
-        });
-        const data = await response.json();
-        if (response.ok) {
-          setBatchMeta(data.batchMeta);
-        } else {
-          setBatchMeta(undefined);
-        }
-      } catch {
-        setBatchMeta(undefined);
-      } finally {
-        setBatchMetaLoading(false);
-      }
-    },
-    [publicKey, selectedNetwork],
-  );
-
-  const handleSkipToggle = (index: number) => {
-    setSkippedIndices((prev) => {
-      const next = [...prev];
-      const idx = next.indexOf(index);
-      if (idx >= 0) {
-        next.splice(idx, 1);
-      } else {
-        next.push(index);
-      }
-      return next;
-    });
-  };
-
-  const handleConvertToggle = (index: number) => {
-    setConvertedIndices((prev) => {
-      const next = [...prev];
-      const idx = next.indexOf(index);
-      if (idx >= 0) {
-        next.splice(idx, 1);
-      } else {
-        next.push(index);
-      }
-      return next;
-    });
-  };
-
-  const handleRetryFailed = (failedPayments: PaymentInstruction[]) => {
-    const rows = failedPayments.map((instruction, index) => ({
-      rowNumber: index + 1,
-      instruction,
-      valid: true,
-    }));
-
-    setValidationResult({
-      rows,
-      validPayments: failedPayments,
-      invalidCount: 0,
-    });
-    setSummary(getBatchSummary(failedPayments));
-    setSkippedIndices([]);
-    setConvertedIndices([]);
-    setStep(2);
-    toast.success(
-      "Loaded failed payments for retry. Review before resubmitting.",
-    );
-  };
 
   // UX: Warn before closing tab during submission (#287)
   useEffect(() => {
@@ -287,63 +149,6 @@ export default function NewBatchPaymentPage() {
     { id: 3, name: t("newBatch.stepReview") },
     { id: 4, name: t("newBatch.stepSubmit") },
   ];
-
-  const handleFileSelect = async (
-    selectedFile: File,
-    format: "json" | "csv",
-  ) => {
-    setFile(selectedFile);
-    setFileFormat(format);
-
-    try {
-      const content = await selectedFile.text();
-      const parsed = parsePaymentFile(content, format);
-      setValidationResult(parsed);
-      setValidationError("");
-
-      // Calculate summary
-      const instructions = parsed.rows.map((r) => r.instruction);
-      const batchSummary = getBatchSummary(instructions);
-      setSummary(batchSummary);
-
-      toast.success("File parsed and validated successfully");
-      setStep(2);
-    } catch (error) {
-      console.error("Failed to parse file:", error);
-      setValidationResult(null);
-      setSummary(null);
-      setValidationError(
-        error instanceof Error ? error.message : "Failed to parse payment file",
-      );
-      toast.error(
-        error instanceof Error ? error.message : "Failed to parse payment file",
-      );
-    }
-  };
-
-  const handleManualContinue = () => {
-    if (manualPayments.length === 0) {
-      toast.error("Please add at least one recipient");
-      return;
-    }
-
-    const validation = validatePaymentInstructions(manualPayments);
-    if (!validation.valid) {
-      const firstError = validation.errors.values().next().value;
-      toast.error(firstError ?? "Please fix invalid recipient rows before continuing");
-      return;
-    }
-
-    const parsed = analyzeParsedPayments(manualPayments);
-    setValidationResult(parsed);
-    setValidationError("");
-
-    const batchSummary = getBatchSummary(manualPayments);
-    setSummary(batchSummary);
-
-    toast.success("Manual batch validated successfully");
-    setStep(2);
-  };
 
   const estimatedFees = summary
     ? (summary.validCount * 0.0001).toFixed(4)
@@ -409,8 +214,10 @@ export default function NewBatchPaymentPage() {
                   type="button"
                   aria-label={`Step ${s.id}: ${s.name}`}
                   aria-current={step === s.id ? "step" : undefined}
-                  disabled={!canNavigateToStep(s.id)}
-                  onClick={() => handleStepClick(s.id)}
+                  disabled={
+                    step < s.id && s.id > 1 && (!validationResult || !summary)
+                  }
+                  onClick={() => setStep(s.id)}
                   className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm transition-colors border-2 outline-hidden disabled:cursor-not-allowed ${step > s.id
                       ? "bg-emerald-500 border-emerald-500 text-white cursor-pointer hover:bg-emerald-600"
                       : step === s.id
@@ -509,14 +316,13 @@ export default function NewBatchPaymentPage() {
                       <ManualBatchEntry
                         initialPayments={manualPayments}
                         onPaymentsChange={setManualPayments}
-                        onCanContinueChange={setManualCanContinue}
                       />
                     </CardContent>
                   </Card>
                   <div className="flex justify-end pt-4">
                     <Button
                       onClick={handleManualContinue}
-                      disabled={!manualCanContinue}
+                      disabled={manualPayments.length === 0}
                       className="bg-emerald-500 hover:bg-emerald-600 text-white w-full sm:w-auto px-8"
                     >
                       {t("newBatch.continueToValidation")}
@@ -670,55 +476,7 @@ export default function NewBatchPaymentPage() {
         {/* Step 3: Review */}
         {step === 3 && summary && validationResult && (
           <MotionSafe {...stepEnter} className="space-y-6">
-            <BatchReview
-              payments={validationResult.validPayments}
-              network={selectedNetwork}
-              batchMeta={batchMeta}
-              skippedIndices={skippedIndices}
-              convertedIndices={convertedIndices}
-              onSkipToggle={handleSkipToggle}
-              onConvertToggle={handleConvertToggle}
-              onSubmit={async (filteredPayments) => {
-                // Submit to API
-                if (!publicKey) return;
-                setIsSubmitting(true);
-                try {
-                  const response = await fetch("/api/batch-submit", {
-                    method: "POST",
-                    headers: {
-                      "Content-Type": "application/json",
-                      "Idempotency-Key": await buildBatchSubmitIdempotencyKey({
-                        payments: filteredPayments,
-                        network: selectedNetwork,
-                        publicKey,
-                      }),
-                    },
-                    body: JSON.stringify({
-                      payments: filteredPayments,
-                      network: selectedNetwork,
-                      publicKey,
-                    }),
-                  });
-                  const data = await response.json();
-                  if (!response.ok) {
-                    throw new Error(data.error || "Failed to submit batch");
-                  }
-                  setJobId(data.jobId);
-                  setJobStatus("queued");
-                  setCompletedBatches(0);
-                  setTotalBatches(0);
-                  startPolling(data.jobId, publicKey);
-                } catch (error) {
-                  console.error("Batch submission error:", error);
-                  setIsSubmitting(false);
-                  toast.error(
-                    error instanceof Error
-                      ? error.message
-                      : "Failed to submit batch",
-                  );
-                }
-              }}
-            />
+            <BatchReview />
           </MotionSafe>
         )}
 
@@ -771,5 +529,13 @@ export default function NewBatchPaymentPage() {
       </BatchErrorBoundary>
       )}
     </div>
+  );
+}
+
+export default function NewBatchPaymentPage() {
+  return (
+    <BatchFlowProvider>
+      <NewBatchPaymentPageContent />
+    </BatchFlowProvider>
   );
 }
