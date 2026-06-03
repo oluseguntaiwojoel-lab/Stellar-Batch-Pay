@@ -1,11 +1,11 @@
 import React from 'react';
-import { motion } from 'framer-motion';
+import { MotionSafe } from "@/components/motion-safe";
 import { Upload, Play, CheckCircle2, Shield, Zap } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 
 export const DashboardMockup = () => {
     return (
-        <motion.div 
+        <MotionSafe 
             initial={{ opacity: 0, x: 50 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.8, ease: "easeOut" }}
@@ -89,6 +89,6 @@ export const DashboardMockup = () => {
             </div>
 
       
-        </motion.div>
+        </MotionSafe>
     );
 };

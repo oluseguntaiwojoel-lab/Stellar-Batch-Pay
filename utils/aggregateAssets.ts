@@ -4,6 +4,11 @@
 
 import { PaymentInstruction } from '@/lib/stellar/types';
 
+/** Minimal shape of a Horizon balance object (native or issued asset). */
+type HorizonBalance =
+  | { asset_type: 'native'; balance: string; asset_code?: never; asset_issuer?: never }
+  | { asset_type: 'credit_alphanum4' | 'credit_alphanum12'; balance: string; asset_code: string; asset_issuer: string };
+
 export interface AssetAmount {
   asset: string; // 'XLM' or 'CODE:ISSUER'
   total: string; // total amount as string (to preserve precision)
@@ -63,7 +68,7 @@ export function aggregatePaymentsByAsset(payments: PaymentInstruction[]): AssetA
 /**
  * Aggregate balances from Horizon balance objects.
  */
-export function aggregateBalances(balances: Horizon.BalanceLine[]): AssetAmount[] {
+export function aggregateBalances(balances: HorizonBalance[]): AssetAmount[] {
   const map = new Map<string, { total: bigint; decimals: number }>();
 
   for (const balance of balances) {

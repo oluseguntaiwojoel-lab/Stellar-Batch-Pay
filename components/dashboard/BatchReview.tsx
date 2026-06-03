@@ -15,29 +15,43 @@ import {
 import { useWallet } from "@/contexts/WalletContext";
 import { useBalances } from "@/hooks/use-balances";
 import { useTrustlines } from "@/hooks/use-trustlines";
-import { aggregatePaymentsByAsset } from "@/utils/aggregateAssets";
+import {
+  aggregatePaymentsByAsset,
+  type AssetAmount,
+} from "@/utils/aggregateAssets";
 import { validateBatchSubmission } from "@/utils/validation";
 import type { PaymentInstruction } from "@/lib/stellar/types";
 
-interface BatchReviewProps {
-  payments: PaymentInstruction[];
-  network: "testnet" | "mainnet";
-  skippedIndices: number[];
-  convertedIndices: number[];
-  onSkipToggle: (index: number) => void;
-  onConvertToggle: (index: number) => void;
-  onSubmit: (filteredPayments: PaymentInstruction[]) => Promise<void>;
+import { useBatchFlow } from "@/contexts/BatchFlowContext";
+
+const BATCH_SIZE_WARN_BYTES = 90_000;
+
+interface BatchMetaEntry {
+  ops: number;
+  estimatedBytes: number;
 }
 
-export function BatchReview({
-  payments,
-  network,
-  skippedIndices,
-  convertedIndices,
-  onSkipToggle,
-  onConvertToggle,
-  onSubmit,
-}: BatchReviewProps) {
+interface BatchReviewProps {
+  payments?: PaymentInstruction[];
+  network?: "testnet" | "mainnet";
+  batchMeta?: BatchMetaEntry[];
+  skippedIndices?: number[];
+  convertedIndices?: number[];
+  onSkipToggle?: (index: number) => void;
+  onConvertToggle?: (index: number) => void;
+  onSubmit?: (filteredPayments: PaymentInstruction[]) => Promise<void>;
+}
+
+export function BatchReview(props: BatchReviewProps) {
+  const context = useBatchFlow();
+  const payments = props.payments ?? context.validationResult?.validPayments ?? [];
+  const network = props.network ?? context.selectedNetwork;
+  const batchMeta = props.batchMeta ?? context.batchMeta;
+  const skippedIndices = props.skippedIndices ?? context.skippedIndices;
+  const convertedIndices = props.convertedIndices ?? context.convertedIndices;
+  const onSkipToggle = props.onSkipToggle ?? context.onSkipToggle;
+  const onConvertToggle = props.onConvertToggle ?? context.onConvertToggle;
+  const onSubmit = props.onSubmit ?? context.onSubmit;
   const { publicKey } = useWallet();
   const { balances, loading: balancesLoading } = useBalances();
   const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
@@ -109,12 +123,29 @@ export function BatchReview({
     [payments, skippedIndices, convertedIndices, trustlineMap],
   );
 
+  const mappedBalances = useMemo<AssetAmount[]>(() => {
+    return balances.map((bal) => ({
+      asset:
+        bal.assetCode === "XLM" ? "XLM" : `${bal.assetCode}:${bal.assetIssuer}`,
+      total: bal.balance,
+      count: 1,
+    }));
+  }, [balances]);
+
+  const largeBatches = useMemo(
+    () =>
+      (batchMeta ?? []).filter(
+        (batch) => batch.estimatedBytes > BATCH_SIZE_WARN_BYTES,
+      ),
+    [batchMeta],
+  );
+
   const validation = validateBatchSubmission(
     payments.filter(
       (_, idx) =>
         !skippedIndices.includes(idx) && !convertedIndices.includes(idx),
     ),
-    balances,
+    mappedBalances,
     missingTrustlineAddresses,
     network,
   );
@@ -172,6 +203,30 @@ export function BatchReview({
 
   return (
     <div className="space-y-6">
+      {largeBatches.length > 0 && (
+        <Card className="bg-amber-500/10 border-amber-500/30">
+          <CardContent className="pt-6">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="text-amber-200 font-medium">
+                  {largeBatches.length} batch
+                  {largeBatches.length > 1 ? "es" : ""} near the 100KB
+                  transaction limit
+                </p>
+                <p className="text-sm text-amber-100/80">
+                  Largest estimate:{" "}
+                  {Math.max(
+                    ...largeBatches.map((b) => b.estimatedBytes),
+                  ).toLocaleString()}{" "}
+                  bytes. Long memos may require fewer payments per transaction.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Balances Summary */}
       <Card className="bg-slate-900/50 border-slate-800">
         <CardHeader>

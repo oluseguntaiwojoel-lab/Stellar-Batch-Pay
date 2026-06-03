@@ -1,0 +1,60 @@
+name: Contract CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "contracts/**"
+      - ".github/workflows/contract.yml"
+  push:
+    branches: [main]
+    paths:
+      - "contracts/**"
+      - ".github/workflows/contract.yml"
+
+concurrency:
+  group: contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  batch-vesting:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Cargo artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            contracts/target
+          key: ${{ runner.os }}-cargo-contracts-${{ hashFiles('contracts/Cargo.lock', 'contracts/Cargo.toml', 'contracts/batch-vesting/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-contracts-
+
+      - name: Run batch-vesting tests
+        working-directory: contracts
+        run: cargo test --manifest-path batch-vesting/Cargo.toml
+
+      - name: Build batch-vesting wasm
+        working-directory: contracts
+        run: cargo build --manifest-path batch-vesting/Cargo.toml --target wasm32-unknown-unknown --release
+
+      - name: Build with Stellar CLI if available
+        working-directory: contracts/batch-vesting
+        shell: bash
+        continue-on-error: true
+        run: |
+          if command -v stellar >/dev/null 2>&1; then
+            stellar contract build --manifest-path Cargo.toml
+          else
+            echo "stellar CLI not available; skipping optional contract build."
+          fi

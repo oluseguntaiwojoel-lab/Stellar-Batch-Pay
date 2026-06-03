@@ -1,7 +1,9 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { ExternalLink, ChevronDown, Loader2 } from "lucide-react"
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { useRouter } from "next/navigation"
+import { useQuery } from "@tanstack/react-query"
+import { ChevronDown, ChevronRight, Loader2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useWallet } from "@/contexts/WalletContext"
@@ -20,13 +22,16 @@ export interface HistoricalBatch {
 }
 
 interface HistoryTableProps {
-  /** Optional override — if omitted the component fetches from /api/batch-history */
   data?: HistoricalBatch[]
   className?: string
   page?: number
   limit?: number
   statusFilter?: string
   networkFilter?: string
+  searchFilter?: string
+  fromFilter?: string
+  onPaginationLoad?: (pagination: { totalPages: number; total: number }) => void
+  onRowsLoad?: (rows: HistoricalBatch[]) => void
 }
 
 function formatDate(iso: string): string {
@@ -55,47 +60,97 @@ function deriveDisplayStatus(batch: HistoricalBatch): "Success" | "Partial" | "F
   return "Success"
 }
 
-export function HistoryTable({ data, className, page = 1, limit = 20, statusFilter, networkFilter }: HistoryTableProps) {
+async function fetchHistory(params: {
+  publicKey: string
+  page: number
+  limit: number
+  statusFilter?: string
+  networkFilter?: string
+  searchFilter?: string
+  fromFilter?: string
+}): Promise<{
+  items: HistoricalBatch[]
+  pagination: { totalPages: number; total: number }
+}> {
+  const urlParams = new URLSearchParams({
+    page: String(params.page),
+    limit: String(params.limit),
+    publicKey: params.publicKey,
+  })
+  if (params.statusFilter) urlParams.set("status", params.statusFilter)
+  if (params.networkFilter) urlParams.set("network", params.networkFilter)
+  if (params.searchFilter?.trim()) urlParams.set("search", params.searchFilter.trim())
+  if (params.fromFilter) urlParams.set("from", params.fromFilter)
+
+  const res = await fetch(`/api/batch-history?${urlParams.toString()}`)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.json()
+}
+
+export function HistoryTable({
+  data,
+  className,
+  page = 1,
+  limit = 20,
+  statusFilter,
+  networkFilter,
+  searchFilter,
+  fromFilter,
+  onPaginationLoad,
+  onRowsLoad,
+}: HistoryTableProps) {
+  const router = useRouter()
   const { publicKey } = useWallet()
-  const [rows, setRows]       = useState<HistoricalBatch[]>(data ?? [])
-  const [loading, setLoading] = useState(!data)
-  const [error, setError]     = useState<string | null>(null)
+  const [debouncedSearch, setDebouncedSearch] = useState(searchFilter ?? "")
 
   useEffect(() => {
-    if (data) {
-      setRows(data)
-      return
+    const timer = setTimeout(() => setDebouncedSearch(searchFilter ?? ""), 300)
+    return () => clearTimeout(timer)
+  }, [searchFilter])
+
+  const queryKey = useMemo(
+    () => ["batch-history", publicKey, page, limit, statusFilter, networkFilter, debouncedSearch, fromFilter] as const,
+    [publicKey, page, limit, statusFilter, networkFilter, debouncedSearch, fromFilter],
+  )
+
+  const { data: result, isLoading, error } = useQuery({
+    queryKey,
+    queryFn: () =>
+      fetchHistory({
+        publicKey: publicKey!,
+        page,
+        limit,
+        statusFilter,
+        networkFilter,
+        searchFilter: debouncedSearch,
+        fromFilter,
+      }),
+    enabled: !!publicKey && !data,
+    staleTime: 30 * 1000,
+    placeholderData: (previousData) =>
+      previousData ?? { items: [], pagination: { totalPages: 1, total: 0 } },
+  })
+
+  const rows = data ?? result?.items ?? []
+
+  useEffect(() => {
+    if (result?.pagination) {
+      onPaginationLoad?.(result.pagination)
     }
+  }, [result?.pagination, onPaginationLoad])
 
-    if (!publicKey) {
-      setRows([])
-      setLoading(false)
-      setError(null)
-      return
+  useEffect(() => {
+    if (result?.items) {
+      onRowsLoad?.(result.items)
     }
+  }, [result?.items, onRowsLoad])
 
-    setLoading(true)
-    setError(null)
+  const openBatchDetail = useCallback(
+    (jobId: string) => router.push(`/dashboard/history/${jobId}`),
+    [router],
+  )
 
-    const params = new URLSearchParams({
-      page:  String(page),
-      limit: String(limit),
-      publicKey,
-    })
-    if (statusFilter)  params.set("status",  statusFilter)
-    if (networkFilter) params.set("network", networkFilter)
-
-    fetch(`/api/batch-history?${params.toString()}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`)
-        return r.json() as Promise<{ items: HistoricalBatch[] }>
-      })
-      .then((body) => setRows(body.items))
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : "Failed to load history"))
-      .finally(() => setLoading(false))
-  }, [data, page, limit, statusFilter, networkFilter, publicKey])
-
-  if (loading) {
+  if (isLoading && rows.length === 0) {
     return (
       <div className="flex items-center justify-center py-16 text-gray-400 gap-2">
         <Loader2 className="h-5 w-5 animate-spin" />
@@ -104,10 +159,10 @@ export function HistoryTable({ data, className, page = 1, limit = 20, statusFilt
     )
   }
 
-  if (error) {
+  if (error && rows.length === 0) {
     return (
       <div className="flex items-center justify-center py-16 text-red-400">
-        Failed to load batch history: {error}
+        Failed to load batch history: {error instanceof Error ? error.message : "Unknown error"}
       </div>
     )
   }
@@ -187,7 +242,7 @@ export function HistoryTable({ data, className, page = 1, limit = 20, statusFilt
                     <Button
                       variant="link"
                       className="text-[#00D98B] hover:text-[#00D98B]/80 p-0 h-auto font-medium"
-                      onClick={() => window.open(`/api/batch-status/${batch.jobId}?publicKey=${encodeURIComponent(publicKey ?? "")}`, "_blank")}
+                      onClick={() => openBatchDetail(batch.jobId)}
                     >
                       View Details
                     </Button>
@@ -253,9 +308,9 @@ export function HistoryTable({ data, className, page = 1, limit = 20, statusFilt
                 <Button
                   variant="link"
                   className="text-[#00D98B] hover:text-[#00D98B]/80 p-0 h-auto text-xs font-semibold"
-                  onClick={() => window.open(`/api/batch-status/${batch.jobId}?publicKey=${encodeURIComponent(publicKey ?? "")}`, "_blank")}
+                  onClick={() => openBatchDetail(batch.jobId)}
                 >
-                  View Details <ExternalLink className="ml-1 h-3 w-3" />
+                  View Details <ChevronRight className="ml-1 h-3 w-3" />
                 </Button>
               </div>
             </div>

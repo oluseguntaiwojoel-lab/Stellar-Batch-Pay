@@ -142,7 +142,7 @@ async function readPayments(path: string): Promise<PaymentInstruction[]> {
   const ext = extname(path).toLowerCase();
   const format = ext === '.csv' ? 'csv' : 'json';
   const parsed = parsePaymentFile(content, format);
-  return parsed.payments;
+  return parsed.validPayments;
 }
 
 async function emitResult(result: unknown, output: string | undefined): Promise<void> {
@@ -180,7 +180,7 @@ async function cmdBuild(args: ParsedArgs): Promise<number> {
     return 1;
   }
   const batches = await createBatches(payments, args.maxOps);
-  const summaries = batches.map((b) => getBatchSummary(b));
+  const summaries = batches.map((b) => getBatchSummary(b.payments));
   await emitResult(
     { command: 'build', input: args.input, batches: summaries.length, summaries },
     args.output,
@@ -208,7 +208,7 @@ async function cmdSubmit(args: ParsedArgs): Promise<number> {
     return 1;
   }
   const batches = await createBatches(payments, args.maxOps);
-  const summaries = batches.map((b) => getBatchSummary(b));
+  const summaries = batches.map((b) => getBatchSummary(b.payments));
 
   // Stage 2: the submit-via-RPC path currently lives behind the dapp
   // UI (`processJobInBackground` in `lib/stellar/batch-worker.ts`);

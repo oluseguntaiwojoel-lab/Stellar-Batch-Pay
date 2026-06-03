@@ -13,6 +13,7 @@ export interface UseStellarWalletReturn {
     publicKey: string | null;
     isConnecting: boolean;
     method: SigningMethod | null;
+    networkPassphrase: string | null;
     signTx: (xdr: string, network: "testnet" | "mainnet") => Promise<string>;
     connect: () => Promise<void>;
     disconnect: () => void;
@@ -21,7 +22,7 @@ export interface UseStellarWalletReturn {
     isSep7ModalOpen: boolean;
     setSep7ModalOpen: (open: boolean) => void;
     // Ledger specific state
-    ledger: LedgerState;
+    ledger: ReturnType<typeof useLedger>;
     connectLedger: () => Promise<void>;
 }
 
@@ -123,6 +124,7 @@ export function useStellarWallet(): UseStellarWalletReturn {
         publicKey: freighter.publicKey || ledger.publicKey,
         isConnecting: freighter.isConnecting || ledger.isConnecting,
         method,
+        networkPassphrase: freighter.networkPassphrase,
         connect,
         disconnect,
         signTx,

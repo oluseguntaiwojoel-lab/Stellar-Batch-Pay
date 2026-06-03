@@ -1,6 +1,6 @@
 'use client';
 
-import { motion } from "framer-motion";
+import { MotionSafe } from "@/components/motion-safe";
 import { Upload, Wallet, Send } from "lucide-react";
 
 const steps = [
@@ -26,15 +26,15 @@ export function HowItWorks() {
         <section className="py-24 bg-background relative overflow-hidden">
             <div className="container px-4 md:px-6 mx-auto relative z-10">
                 <div className="text-center max-w-3xl mx-auto mb-16">
-                    <motion.h2
+                    <MotionSafe as="h2"
                         initial={{ opacity: 0, y: 20 }}
                         whileInView={{ opacity: 1, y: 0 }}
                         viewport={{ once: true }}
                         className="text-3xl md:text-5xl font-bold tracking-tighter mb-4"
                     >
                         How it <span className="text-primary">Works</span>
-                    </motion.h2>
-                    <motion.p
+                    </MotionSafe>
+                    <MotionSafe as="p"
                         initial={{ opacity: 0, y: 20 }}
                         whileInView={{ opacity: 1, y: 0 }}
                         viewport={{ once: true }}
@@ -42,7 +42,7 @@ export function HowItWorks() {
                         className="text-xl text-muted-foreground"
                     >
                         Three simple steps to process thousands of payments.
-                    </motion.p>
+                    </MotionSafe>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-8 relative">
@@ -50,7 +50,7 @@ export function HowItWorks() {
                     <div className="hidden md:block absolute top-12 left-[16%] right-[16%] h-0.5 bg-border -z-10" />
 
                     {steps.map((step, index) => (
-                        <motion.div
+                        <MotionSafe
                             key={index}
                             initial={{ opacity: 0, y: 20 }}
                             whileInView={{ opacity: 1, y: 0 }}
@@ -65,7 +65,7 @@ export function HowItWorks() {
                             <p className="text-muted-foreground leading-relaxed max-w-xs">
                                 {step.description}
                             </p>
-                        </motion.div>
+                        </MotionSafe>
                     ))}
                 </div>
             </div>

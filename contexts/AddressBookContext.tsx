@@ -1,6 +1,18 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { useToast } from "@/hooks/use-toast";
+import {
+  Contact,
+  loadContacts,
+  saveContacts,
+  upsertContact,
+  removeContactById,
+  createAddressMap,
+} from "@/lib/address-book-storage";
+
+// Re-export Contact type for backwards compatibility
+export { Contact };
 
 export interface AddressBookEntry {
     address: string;
@@ -13,81 +25,61 @@ interface AddressBookContextType {
     getName: (address: string) => string | null;
     saveName: (address: string, name: string) => void;
     removeEntry: (address: string) => void;
-    allEntries: AddressBookEntry[];
+    allEntries: Contact[];
 }
 
 const AddressBookContext = createContext<AddressBookContextType | undefined>(undefined);
 
-const STORAGE_KEY = "batchpay_address_book";
-
 export function AddressBookProvider({ children }: { children: React.ReactNode }) {
-    const [entries, setEntries] = useState<Record<string, string>>({});
+    const { toast } = useToast();
+    const [contacts, setContacts] = useState<Contact[]>([]);
     const [initialized, setInitialized] = useState(false);
 
-    // Load from localStorage on mount
+    // Load and migrate from localStorage on mount
     useEffect(() => {
-        const stored = localStorage.getItem(STORAGE_KEY);
-        if (stored) {
-            try {
-                const parsed = JSON.parse(stored) as any[];
-                const mapping: Record<string, string> = {};
-                parsed.forEach(entry => {
-                    if (entry.address && entry.name) {
-                        mapping[entry.address] = String(entry.name);
-                    }
-                });
-                setEntries(mapping);
-            } catch (err) {
-                console.error("Failed to parse address book:", err);
-            }
-        }
-        setInitialized(true);
-    }, []);
+        const { contacts: loadedContacts, importedCount } = loadContacts();
+        setContacts(loadedContacts);
 
-    // Persist to localStorage when entries change
+        if (importedCount > 0) {
+            toast({
+                title: `Imported ${importedCount} contacts`,
+                description: "Contacts from previous storage were merged into your address book.",
+            });
+            console.info(`Imported ${importedCount} contacts from legacy address book storage.`);
+        }
+
+        setInitialized(true);
+    }, [toast]);
+
+    // Persist to localStorage when contacts change
     useEffect(() => {
         if (!initialized) return;
-
-        const entryList: AddressBookEntry[] = Object.entries(entries).map(([address, name]) => ({
-            address,
-            name,
-            addedAt: Date.now(),
-        }));
-
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(entryList));
-    }, [entries, initialized]);
+        saveContacts(contacts);
+    }, [contacts, initialized]);
 
     const getName = useCallback((address: string) => {
-        return entries[address] || null;
-    }, [entries]);
+        return contacts.find((contact) => contact.address === address)?.name || null;
+    }, [contacts]);
 
     const saveName = useCallback((address: string, name: string) => {
-        setEntries(prev => ({
-            ...prev,
-            [address]: name
-        }));
+        setContacts(prev => upsertContact(prev, name, address));
     }, []);
 
     const removeEntry = useCallback((address: string) => {
-        setEntries(prev => {
-            const next = { ...prev };
-            delete next[address];
-            return next;
+        setContacts(prev => {
+            const contact = prev.find((c) => c.address === address);
+            return contact ? removeContactById(prev, contact.id) : prev;
         });
     }, []);
 
-    const allEntries: AddressBookEntry[] = Object.entries(entries).map(([address, name]) => ({
-        address,
-        name,
-        addedAt: 0,
-    }));
+    const entryMap = createAddressMap(contacts);
 
     const value: AddressBookContextType = {
-        entries,
+        entries: entryMap,
         getName,
         saveName,
         removeEntry,
-        allEntries,
+        allEntries: contacts,
     };
 
     return (

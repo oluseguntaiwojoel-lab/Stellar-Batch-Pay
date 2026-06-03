@@ -5,7 +5,7 @@
 
 export { parseInput, parseJSON, parseCSV, parseFileStream, analyzeParsedPayments, parsePaymentFile, MAX_UPLOAD_ROWS } from './parser';
 export { createBatches, parseAsset, getBatchSummary } from './batcher';
-export { validatePaymentInstruction, validateBatchConfig, validatePaymentInstructions, validateBalances, buildBalancesMap } from './validator';
+export { validatePaymentInstruction, validateBatchConfig, validatePaymentInstructions, validateBalances, buildBalancesMap, validateBatchForSubmit } from './validator';
 export { fetchFeeStats, getRecommendedFee, getFeeForOperations, clearFeeCache } from './fee-service';
 export type { FeeStats, FeeOptions } from './fee-service';
 export type { 
@@ -22,4 +22,28 @@ export type {
   BalanceValidationResult
 } from './types';
 export { formatAmount } from './utils';
-export { buildDepositTransaction, buildClaimTransaction, buildRevokeTransaction, buildBumpInstanceTtlTransaction, buildBumpVestingTtlTransaction } from './vesting';
+export {
+  buildDepositTransaction,
+  buildClaimTransaction,
+  buildRevokeTransaction,
+  buildTransferVestingRightsTransaction,
+  buildBumpInstanceTtlTransaction,
+  buildBumpVestingTtlTransaction,
+} from './vesting';
+export {
+  parseVestingClaimedPayload,
+  parseVestingDeposited,
+  parseVestingRevoked,
+  parseVestingPartiallyRevoked,
+  parseVestingTransferred,
+  parseFeeCollected,
+  parseVestingEventRecipient,
+} from './vesting-events';
+export type {
+  VestingClaimedEventPayload,
+  VestingDepositedEventPayload,
+  VestingRevokedEventPayload,
+  VestingPartiallyRevokedEventPayload,
+  VestingTransferredEventPayload,
+  FeeCollectedEventPayload,
+} from './vesting-events';

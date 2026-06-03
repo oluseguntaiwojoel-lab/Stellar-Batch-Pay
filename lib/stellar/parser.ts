@@ -38,11 +38,12 @@ export function parseJSON(content: string): PaymentInstruction[] {
       throw new Error('Expected an array of payment instructions or object with "payments" array');
     }
 
-    return rawInstructions.map((item: Record<string, unknown>) => {
+    return rawInstructions.map((item: Record<string, unknown>, index: number) => {
       const instruction: PaymentInstruction = {
         address: sanitizeValue(String(item.address ?? '')),
         amount: sanitizeValue(String(item.amount ?? '')),
         asset: sanitizeValue(String(item.asset ?? '')),
+        rowIndex: index, // #397: preserve original row index for retry matching
       };
 
       if (item.memo != null && String(item.memo).trim() !== '') {
@@ -73,10 +74,6 @@ export function parseCSV(content: string): PaymentInstruction[] {
     transformHeader: (header: string) => header.trim().toLowerCase(),
   });
 
-  if (parsed.errors.length > 0) {
-    throw new Error(`Failed to parse CSV: ${parsed.errors[0].message}`);
-  }
-
   const headers = parsed.meta.fields?.map(header => header.trim().toLowerCase()) ?? [];
   if (headers.length === 0 || parsed.data.length === 0) {
     throw new Error('CSV must have at least a header row and one data row');
@@ -93,11 +90,20 @@ export function parseCSV(content: string): PaymentInstruction[] {
   const hasMemo = headers.indexOf('memo') !== -1;
   const hasMemoType = headers.indexOf('memotype') !== -1;
 
-  const instructions = parsed.data.map(row => {
+  // Build a lookup of PapaParse row-level errors so we can annotate rows.
+  const rowErrors = new Map<number, string>();
+  for (const err of parsed.errors) {
+    if (typeof err.row === 'number') {
+      rowErrors.set(err.row, err.message);
+    }
+  }
+
+  const instructions = parsed.data.map((row, index) => {
     const instruction: PaymentInstruction = {
       address: sanitizeValue(String(row.address || '')),
       amount: sanitizeValue(String(row.amount || '')),
       asset: sanitizeValue(String(row.asset || '')),
+      rowIndex: index, // #397: preserve original row index for retry matching
     };
 
     if (hasMemo) {
@@ -174,15 +180,27 @@ export function parsePaymentFile(content: string, format: 'json' | 'csv'): Parse
   return analyzeParsedPayments(instructions, format === 'csv' ? 2 : 1);
 }
 
+export interface StreamValidationError {
+  row: number;
+  column?: string;
+  message: string;
+}
+
+export interface StreamValidationResult {
+  payments: PaymentInstruction[];
+  errors: StreamValidationError[];
+}
+
 export function parseFileStream(
   file: File,
   callbacks: {
     onProgress?: (count: number) => void;
-    onComplete: (payments: PaymentInstruction[]) => void;
+    onComplete: (result: StreamValidationResult) => void;
     onError: (error: Error) => void;
   }
 ) {
   const instructions: PaymentInstruction[] = [];
+  const validationErrors: StreamValidationError[] = [];
   let rowCount = 0;
   let aborted = false;
 
@@ -195,13 +213,23 @@ export function parseFileStream(
       const data = results.data as Record<string, unknown>[];
 
       for (let i = 0; i < data.length; i++) {
-        const row = data[i];
+        const absoluteRow = rowCount + i + 1; // 1-based, accounting for header row
 
         if (rowCount + i >= MAX_UPLOAD_ROWS) {
           aborted = true;
           parser.abort();
           callbacks.onError(new Error(`Upload exceeds the maximum of ${MAX_UPLOAD_ROWS} rows. Please split your file into smaller files.`));
           return;
+        }
+
+        const row = data[i];
+
+        if (!row.address || !row.amount || !row.asset) {
+          validationErrors.push({
+            row: absoluteRow,
+            message: `Row ${absoluteRow} is missing required columns: address, amount, asset`,
+          });
+          continue;
         }
 
         const instruction: PaymentInstruction = {
@@ -219,19 +247,14 @@ export function parseFileStream(
           }
         }
 
-        if (!instruction.address || !instruction.amount || !instruction.asset) {
-          aborted = true;
-          parser.abort();
-          callbacks.onError(new Error(`Row ${rowCount + i + 1} has insufficient columns: requires address, amount, asset`));
-          return;
-        }
-
         const validation = validatePaymentInstruction(instruction);
         if (!validation.valid) {
-          aborted = true;
-          parser.abort();
-          callbacks.onError(new Error(`Row ${rowCount + i + 1}: ${validation.error}`));
-          return;
+          validationErrors.push({
+            row: absoluteRow,
+            column: extractColumnFromError(validation.error),
+            message: `Row ${absoluteRow}: ${validation.error}`,
+          });
+          continue;
         }
 
         instructions.push(instruction);
@@ -250,11 +273,22 @@ export function parseFileStream(
     complete: () => {
       if (aborted) return;
 
-      if (instructions.length === 0) {
+      if (instructions.length === 0 && validationErrors.length === 0) {
         callbacks.onError(new Error('No valid payment instructions found in CSV'));
-      } else {
-        callbacks.onComplete(instructions);
+        return;
       }
+
+      callbacks.onComplete({ payments: instructions, errors: validationErrors });
     }
   });
+}
+
+function extractColumnFromError(error?: string): string | undefined {
+  if (!error) return undefined;
+  const lower = error.toLowerCase();
+  if (lower.includes('address')) return 'address';
+  if (lower.includes('amount')) return 'amount';
+  if (lower.includes('asset')) return 'asset';
+  if (lower.includes('memo')) return 'memo';
+  return undefined;
 }

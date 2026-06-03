@@ -1,6 +1,6 @@
 'use client';
 
-import { motion } from 'framer-motion';
+import { MotionSafe } from "@/components/motion-safe";
 import { Lock, ShieldCheck, Headset } from 'lucide-react';
 
 const features = [
@@ -29,15 +29,15 @@ export function SecuritySection() {
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[300px] bg-[#00D98B0D] blur-[120px] rounded-full pointer-events-none -z-10" />
 
         <div className="text-center max-w-3xl mx-auto mb-16">
-          <motion.h2
+          <MotionSafe as="h2"
             initial={{ opacity: 0, y: -20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             className="text-3xl md:text-5xl font-bold tracking-tight mb-4"
           >
             Built with <span className="text-[#00D98B]">Security & Reliability</span> at the Core
-          </motion.h2>
-          <motion.p
+          </MotionSafe>
+          <MotionSafe as="p"
             initial={{ opacity: 0 }}
             whileInView={{ opacity: 1 }}
             viewport={{ once: true }}
@@ -45,12 +45,12 @@ export function SecuritySection() {
             className="text-[#8B92B0] text-lg"
           >
             Enterprise-grade security and blockchain transparency you can trust.
-          </motion.p>
+          </MotionSafe>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-12 max-w-5xl mx-auto">
           {features.map((feature, index) => (
-            <motion.div
+            <MotionSafe
               key={index}
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
@@ -65,7 +65,7 @@ export function SecuritySection() {
               <p className="text-[#8B92B0] text-sm leading-relaxed max-w-[250px]">
                 {feature.description}
               </p>
-            </motion.div>
+            </MotionSafe>
           ))}
         </div>
       </div>

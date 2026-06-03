@@ -1,6 +1,6 @@
 'use client';
 
-import { motion } from 'framer-motion';
+import { MotionSafe } from "@/components/motion-safe";
 import { FileUp, ShieldCheck, Send, BarChart3 } from 'lucide-react';
 
 const steps = [
@@ -52,15 +52,15 @@ export function ProcessSection() {
     <section className="py-24 bg-[#0A0E1A] text-white overflow-hidden ">
       <div className="container px-4 md:px-6 mx-auto">
         <div className="text-center max-w-3xl mx-auto mb-16">
-          <motion.h2
+          <MotionSafe as="h2"
             initial={{ opacity: 0, y: -20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             className="text-3xl md:text-5xl font-bold tracking-tight mb-4"
           >
             Simple <span className="text-[#00D98B]">Four-Step Process</span>
-          </motion.h2>
-          <motion.p
+          </MotionSafe>
+          <MotionSafe as="p"
             initial={{ opacity: 0 }}
             whileInView={{ opacity: 1 }}
             viewport={{ once: true }}
@@ -68,10 +68,10 @@ export function ProcessSection() {
             className="text-[#8B92B0] text-lg"
           >
             From upload to completion in minutes, not hours.
-          </motion.p>
+          </MotionSafe>
         </div>
 
-        <motion.div
+        <MotionSafe
           variants={containerVariants}
           initial="hidden"
           whileInView="visible"
@@ -79,7 +79,7 @@ export function ProcessSection() {
           className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8"
         >
           {steps.map((step, index) => (
-            <motion.div
+            <MotionSafe
               key={index}
               variants={itemVariants}
               className="relative group h-full"
@@ -99,9 +99,9 @@ export function ProcessSection() {
                   {step.description}
                 </p>
               </div>
-            </motion.div>
+            </MotionSafe>
           ))}
-        </motion.div>
+        </MotionSafe>
       </div>
     </section>
   );

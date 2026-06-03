@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, test, vi, beforeEach } from 'vitest';
-import { Keypair, xdr, scValToNative } from 'stellar-sdk';
+import { Contract, Keypair, xdr, scValToNative } from 'stellar-sdk';
 import type { PaymentInstruction } from '../lib/stellar/types';
 
 // --- Mock the Soroban RPC surface --------------------------------
@@ -90,7 +90,8 @@ describe('buildDepositTransaction (#364)', () => {
       payments,
       1_700_000_000,
       1_800_000_000,
-      86_400,
+      86_400, // cliffTime
+      86_400, // vestingStep
       'testnet',
       sender,
     );
@@ -113,7 +114,8 @@ describe('buildDepositTransaction (#364)', () => {
         payments,
         1_700_000_000,
         1_700_000_100,
-        86_400,
+        86_400, // cliffTime
+        86_400, // vestingStep
         'testnet',
         sender,
       ),
@@ -149,16 +151,74 @@ describe('buildDepositTransaction (#364)', () => {
     const { buildDepositTransaction } = await import('../lib/stellar/vesting');
     const sender = Keypair.random().publicKey();
     await expect(
-      // @ts-expect-error — deliberate boundary violation
       buildDepositTransaction(
         'CACONTRACTIDADDRESSPLACEHOLDERPLACEHOLDER',
         [payment(Keypair.random().publicKey(), '1')],
         1,
         2,
         1,
-        'futurenet',
+        // @ts-expect-error — deliberate boundary violation: 'invalid-network' must not satisfy the network union
+        'invalid-network',
         sender,
       ),
     ).rejects.toBeDefined();
+  });
+});
+
+describe('buildRevokeTransaction (#392)', () => {
+  test('revoke passes caller, recipient and index in order', async () => {
+    const callSpy = vi.spyOn(Contract.prototype, 'call');
+    const { buildRevokeTransaction } = await import('../lib/stellar/vesting');
+
+    const recipient = Keypair.random().publicKey();
+    const caller = Keypair.random().publicKey();
+
+    // We only assert the ScVals handed to `contract.call(...)`; those are
+    // assembled before the network-bound Soroban submission, so swallow any
+    // downstream RPC error and let the ABI assertion stand on its own. A
+    // structurally valid contract ID is required by the current stellar-sdk.
+    await buildRevokeTransaction(
+      'CAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQMCJ',
+      recipient,
+      3,
+      'testnet',
+      caller,
+    ).catch(() => undefined);
+
+    expect(callSpy).toHaveBeenCalledTimes(1);
+    const [fn, ...args] = callSpy.mock.calls[0];
+    expect(fn).toBe('revoke');
+    // Contract is revoke(env, caller, recipient, index) — three ScVals after fn.
+    expect(args).toHaveLength(3);
+    expect(scValToNative(args[0] as xdr.ScVal)).toBe(caller);
+    expect(scValToNative(args[1] as xdr.ScVal)).toBe(recipient);
+    expect(Number(scValToNative(args[2] as xdr.ScVal))).toBe(3);
+    callSpy.mockRestore();
+  });
+});
+
+describe('buildTransferVestingRightsTransaction', () => {
+  test('transfer_vesting_rights passes three contract arguments', async () => {
+    const callSpy = vi.spyOn(Contract.prototype, 'call');
+    const { buildTransferVestingRightsTransaction } = await import('../lib/stellar/vesting');
+
+    const from = Keypair.random().publicKey();
+    const to = Keypair.random().publicKey();
+    const signer = Keypair.random().publicKey();
+
+    await buildTransferVestingRightsTransaction(
+      'CACONTRACTIDADDRESSPLACEHOLDERPLACEHOLDER',
+      from,
+      to,
+      2,
+      'testnet',
+      signer,
+    );
+
+    expect(callSpy).toHaveBeenCalled();
+    const [fn, ...args] = callSpy.mock.calls[0];
+    expect(fn).toBe('transfer_vesting_rights');
+    expect(args).toHaveLength(3);
+    callSpy.mockRestore();
   });
 });

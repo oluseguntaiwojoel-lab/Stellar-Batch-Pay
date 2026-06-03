@@ -4,6 +4,8 @@
 
 export type JobStatus = "queued" | "processing" | "completed" | "failed";
 
+export type Network = "testnet" | "mainnet" | "futurenet";
+
 export interface JobState {
   jobId: string;
   publicKey: string | null;
@@ -11,7 +13,7 @@ export interface JobState {
   totalBatches: number;
   completedBatches: number;
   payments: PaymentInstruction[];
-  network: "testnet" | "mainnet";
+  network: Network;
   // #300: Support for pre-signed transactions (client-side signing)
   signedTransactions?: string[];
   result?: BatchResult;
@@ -20,7 +22,7 @@ export interface JobState {
   updatedAt: string;
 }
 
-export type MemoType = 'text' | 'id' | 'none';
+export type MemoType = "text" | "id" | "none";
 
 export interface PaymentInstruction {
   address: string;
@@ -28,6 +30,7 @@ export interface PaymentInstruction {
   asset: string; // 'XLM' for native or 'CODE:ISSUER' for issued assets
   memo?: string;
   memoType?: MemoType; // defaults to 'text' when memo is provided
+  rowIndex?: number; // #397: original row index from upload, used for retry matching
 }
 
 export interface PaymentValidationRow {
@@ -61,6 +64,7 @@ export interface PaymentResult {
   status: "success" | "failed";
   transactionHash?: string;
   error?: string;
+  rowIndex?: number; // #397: original row index, persisted for retry matching
 }
 
 export interface BatchResult {
@@ -68,7 +72,7 @@ export interface BatchResult {
   totalRecipients: number;
   totalAmount: string;
   totalTransactions: number;
-  network: "testnet" | "mainnet";
+  network: Network;
   timestamp: string;
   submittedAt?: string;
   results: PaymentResult[];
@@ -80,22 +84,28 @@ export interface BatchResult {
 
 export interface BatchConfig {
   maxOperationsPerTransaction: number;
-  network: "testnet" | "mainnet";
+  network: Network;
   secretKey: string;
 }
 
 /** Config for building unsigned transactions (wallet-signing flow) */
 export interface BuildBatchConfig {
   maxOperationsPerTransaction: number;
-  network: "testnet" | "mainnet";
+  network: Network;
   publicKey: string;
+}
+
+export interface BatchMetaEntry {
+  ops: number;
+  estimatedBytes: number;
 }
 
 /** Result from the batch-build endpoint (unsigned XDRs) */
 export interface BuildBatchResult {
   xdrs: string[];
   batchCount: number;
-  network: "testnet" | "mainnet";
+  batchMeta?: BatchMetaEntry[];
+  network: Network;
   publicKey: string;
 }
 

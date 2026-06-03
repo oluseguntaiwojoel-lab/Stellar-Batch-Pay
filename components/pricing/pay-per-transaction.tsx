@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { MotionSafe } from "@/components/motion-safe";
 import { Zap } from "lucide-react";
 
 const metrics = [
@@ -13,7 +13,7 @@ export function PayPerTransaction() {
   return (
     <section className="w-full py-16 md:py-24">
       <div className="max-w-[1200px] mx-auto px-6 sm:px-8 md:px-12">
-        <motion.div
+        <MotionSafe
           initial={{ opacity: 0, y: 30 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
@@ -26,7 +26,7 @@ export function PayPerTransaction() {
           </div>
 
           {/* Icon */}
-          <motion.div
+          <MotionSafe
             initial={{ opacity: 0, scale: 0.8 }}
             whileInView={{ opacity: 1, scale: 1 }}
             viewport={{ once: true }}
@@ -34,10 +34,10 @@ export function PayPerTransaction() {
             className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#00D98B1A] border border-[#00D98B33]"
           >
             <Zap className="h-8 w-8 text-[#00D98B]" />
-          </motion.div>
+          </MotionSafe>
 
           {/* Heading */}
-          <motion.h2
+          <MotionSafe as="h2"
             initial={{ opacity: 0, y: 15 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
@@ -45,10 +45,10 @@ export function PayPerTransaction() {
             className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4 tracking-tight"
           >
             Pay Per Transaction
-          </motion.h2>
+          </MotionSafe>
 
           {/* Supporting text */}
-          <motion.p
+          <MotionSafe as="p"
             initial={{ opacity: 0, y: 15 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
@@ -57,12 +57,12 @@ export function PayPerTransaction() {
           >
             Pay a small fee per transaction. The more you send, the more you
             save.
-          </motion.p>
+          </MotionSafe>
 
           {/* Pricing metrics */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-8 sm:gap-6 max-w-3xl mx-auto relative z-10">
             {metrics.map((metric, index) => (
-              <motion.div
+              <MotionSafe
                 key={metric.label}
                 initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
@@ -76,10 +76,10 @@ export function PayPerTransaction() {
                 <span className="text-sm sm:text-base text-[#8B92B0] font-medium">
                   {metric.label}
                 </span>
-              </motion.div>
+              </MotionSafe>
             ))}
           </div>
-        </motion.div>
+        </MotionSafe>
       </div>
     </section>
   );

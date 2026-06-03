@@ -26,23 +26,11 @@ import {
   validateBatchConfig,
 } from "./validator";
 import { getRecommendedFee } from "./fee-service";
+import { isBadSequenceError } from "./submit-errors";
+import { horizonUrl } from "./network-config";
 import Big from "big.js";
-import { parseStellarAmount, formatStellarAmount } from "./utils";
-
-/**
- * Utility to parse asset input into a StellarAsset instance
- */
-export function parseAsset(asset: any): StellarAsset {
-  if (asset === "XLM" || asset === "native") {
-    return StellarAsset.native();
-  }
-
-  if (!asset.code || !asset.issuer) {
-    throw new Error("Invalid asset: must provide code and issuer");
-  }
-
-  return new StellarAsset(asset.code, asset.issuer);
-}
+import { parseStellarAmount, formatStellarAmount, parseAsset, truncateMemoToBytes } from "./utils";
+export { parseAsset };
 
 export class StellarService {
   private keypair: Keypair;
@@ -60,12 +48,7 @@ export class StellarService {
     this.network = config.network;
     this.maxOperationsPerTransaction = config.maxOperationsPerTransaction;
 
-    const serverUrl =
-      config.network === "testnet"
-        ? "https://horizon-testnet.stellar.org"
-        : "https://horizon.stellar.org";
-
-    this.server = new Horizon.Server(serverUrl);
+    this.server = new Horizon.Server(horizonUrl(config.network));
   }
 
   /**
@@ -79,7 +62,7 @@ export class StellarService {
 
     try {
       // Load source account
-      const sourceAccount = await this.server.loadAccount(
+      let sourceAccount = await this.server.loadAccount(
         this.keypair.publicKey(),
       );
 
@@ -97,20 +80,25 @@ export class StellarService {
       let totalAmountBig = new Big(0);
 
       for (const batch of batches) {
+        // Indices into `results` of placeholders for operations actually added
+        // to this transaction. Validation/asset-parse failures are pushed to
+        // `results` too but are NOT added to the builder, so they must be
+        // excluded from the success/error updates below (#389).
+        const addedResultIndices: number[] = [];
         try {
           // Use user-provided memo from the first payment that has one,
           // otherwise fall back to the system-generated tracking memo.
           // Stellar supports only one memo per transaction.
           const firstMemoPayment = batch.payments.find(p => p.memo);
-          let memo: ReturnType<typeof Memo.text>;
+          let memo: any;
           if (firstMemoPayment?.memo) {
             const memoType = firstMemoPayment.memoType ?? 'text';
             memo = memoType === 'id'
               ? Memo.id(firstMemoPayment.memo)
-              : Memo.text(firstMemoPayment.memo);
+              : Memo.text(truncateMemoToBytes(firstMemoPayment.memo));
           } else {
             const memoId = `bp-${Date.now()}-${txCount}`;
-            memo = Memo.text(memoId.slice(0, 28));
+            memo = Memo.text(truncateMemoToBytes(memoId));
           }
 
           let builder = new TransactionBuilder(sourceAccount, {
@@ -132,6 +120,7 @@ export class StellarService {
                 status: "failed",
                 transactionHash: undefined,
                 error: validation.error,
+                rowIndex: payment.rowIndex,
               });
               continue;
             }
@@ -148,6 +137,7 @@ export class StellarService {
                 status: "failed",
                 transactionHash: undefined,
                 error: err instanceof Error ? err.message : "Invalid asset",
+                rowIndex: payment.rowIndex,
               });
               continue;
             }
@@ -169,34 +159,44 @@ export class StellarService {
               asset: payment.asset,
               status: "failed",
               transactionHash: undefined,
+              rowIndex: payment.rowIndex,
             });
+            addedResultIndices.push(results.length - 1);
+          }
+
+          // Every payment in this batch was invalid — nothing to submit.
+          // (TransactionBuilder.build() throws with zero operations.)
+          if (addedResultIndices.length === 0) {
+            continue;
           }
 
           // Build, sign, and submit transaction
           const transaction = builder.setTimeout(300).build();
           transaction.sign(this.keypair);
           const result = await this.server.submitTransaction(transaction);
+          sourceAccount.incrementSequenceNumber();
 
           txCount++;
 
-          // Update successful results
-          for (
-            let i = results.length - batch.payments.length;
-            i < results.length;
-            i++
-          ) {
-            if (results[i].status === "failed") {
-              results[i].status = "success";
-              results[i].transactionHash = result.hash;
-            }
+          // Mark only the operations that were actually included in this
+          // transaction as successful. Validation failures keep their own
+          // status/error and must never be flipped to success (#389).
+          for (const i of addedResultIndices) {
+            results[i].status = "success";
+            results[i].transactionHash = result.hash;
           }
         } catch (error) {
           // Mark batch results as failed if transaction fails
-          for (const result of results) {
-            if (result.status === "failed") {
-              result.error =
-                error instanceof Error ? error.message : "Unknown error";
-            }
+          if (isBadSequenceError(error)) {
+            sourceAccount = await this.server.loadAccount(this.keypair.publicKey());
+          }
+
+          // Only annotate the operations that belonged to this failed
+          // transaction; rows that failed validation already carry their
+          // own error message.
+          for (const i of addedResultIndices) {
+            results[i].error =
+              error instanceof Error ? error.message : "Unknown error";
           }
         }
       }

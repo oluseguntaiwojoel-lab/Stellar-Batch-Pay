@@ -1,37 +1,43 @@
 // scripts/keeper.ts
 import {
-  SorobanRpc,
+  rpc as SorobanRpc,
   Networks,
   Keypair,
   TransactionBuilder,
   Account,
   Contract,
   Address,
-  nativeToScVal
-} from 'stellar-sdk';
-import { createSecretsProvider } from '../lib/secrets/index';
+  nativeToScVal,
+} from "stellar-sdk";
+import { createSecretsProvider } from "../lib/secrets/index";
+import {
+  decodeTopicValue,
+  parseVestingEventRecipient,
+  parseVestingTransferred,
+} from "../lib/stellar/vesting-events";
 
 /**
  * CONFIGURATION
  */
-const RPC_URL = process.env.SOROBAN_RPC_URL || 'https://soroban-testnet.stellar.org';
+const RPC_URL =
+  process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
 const NETWORK_PASSPHRASE = process.env.NETWORK_PASSPHRASE || Networks.TESTNET;
 const CONTRACT_ID = process.env.CONTRACT_ID;
 const U32_MAX = 2 ** 32 - 1;
-const MAINTENANCE_START_INDEX = readU32Env('MAINTENANCE_START_INDEX', 0);
-const MAINTENANCE_LIMIT = readU32Env('MAINTENANCE_LIMIT', 10);
+const MAINTENANCE_START_INDEX = readU32Env("MAINTENANCE_START_INDEX", 0);
+const MAINTENANCE_LIMIT = readU32Env("MAINTENANCE_LIMIT", 10);
 const BUMP_THRESHOLD_DAYS = 7;
 const ALERT_WEBHOOK_URL = process.env.ALERT_WEBHOOK_URL;
-const LOW_BALANCE_THRESHOLD = Number(process.env.LOW_BALANCE_THRESHOLD || '50'); // XLM
+const LOW_BALANCE_THRESHOLD = Number(process.env.LOW_BALANCE_THRESHOLD || "50"); // XLM
 
 if (!CONTRACT_ID) {
-  console.error('MISSING CONTRACT_ID in environment');
+  console.error("MISSING CONTRACT_ID in environment");
   process.exit(1);
 }
 
 function readU32Env(name: string, fallback: number): number {
   const rawValue = process.env[name];
-  if (rawValue === undefined || rawValue === '') {
+  if (rawValue === undefined || rawValue === "") {
     return fallback;
   }
 
@@ -49,30 +55,35 @@ async function sendAlert(message: string) {
 
   try {
     const response = await fetch(ALERT_WEBHOOK_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text: `🚨 *Keeper Bot Alert*: ${message}` }),
     });
     if (!response.ok) {
-      console.error('Failed to send alert to webhook:', response.statusText);
+      console.error("Failed to send alert to webhook:", response.statusText);
     }
   } catch (error) {
-    console.error('Error sending alert:', error);
+    console.error("Error sending alert:", error);
   }
 }
 
 async function checkBalance(server: SorobanRpc.Server, publicKey: string) {
   try {
     const account = await server.getAccount(publicKey);
-    // native balance is usually the first element in balances array
-    const nativeBalance = account.balances.find(b => b.asset_type === 'native');
-    const balance = Number(nativeBalance?.balance || '0');
+    // SorobanRpc Account type doesn't expose balances in its TS definitions;
+    // cast to any to access the underlying Horizon balance data.
+    const nativeBalance = (account as any).balances?.find(
+      (b: any) => b.asset_type === "native",
+    );
+    const balance = Number(nativeBalance?.balance || "0");
 
     if (balance < LOW_BALANCE_THRESHOLD) {
-      await sendAlert(`Low balance warning! Sponsor wallet ${publicKey} has only ${balance} XLM remaining.`);
+      await sendAlert(
+        `Low balance warning! Sponsor wallet ${publicKey} has only ${balance} XLM remaining.`,
+      );
     }
   } catch (error) {
-    console.error('Failed to check balance:', error);
+    console.error("Failed to check balance:", error);
   }
 }
 
@@ -80,12 +91,12 @@ async function main() {
   // Fetch the keeper secret from the configured backend (#257).
   // Set SECRET_BACKEND=aws|github|env (default: env with a warning).
   const secrets = await createSecretsProvider();
-  const keeperSecret = await secrets.fetchSecret('KEEPER_SECRET');
+  const keeperSecret = await secrets.fetchSecret("KEEPER_SECRET");
   const keeperKeypair = Keypair.fromSecret(keeperSecret);
   const server = new SorobanRpc.Server(RPC_URL);
   const contract = new Contract(CONTRACT_ID!);
 
-  console.log('Starting Keeper Bot...');
+  console.log("Starting Keeper Bot...");
   console.log(`Contract: ${CONTRACT_ID}`);
   console.log(`Keeper: ${keeperKeypair.publicKey()}`);
 
@@ -112,11 +123,10 @@ async function main() {
     // 3. Proactive balance check
     await checkBalance(server, keeperKeypair.publicKey());
 
-    console.log('Keeper Bot finished successfully.');
-
+    console.log("Keeper Bot finished successfully.");
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
-    console.error('Keeper execution failed:', errorMsg);
+    console.error("Keeper execution failed:", errorMsg);
     await sendAlert(`Critical failure in Keeper Bot: ${errorMsg}`);
   }
 }
@@ -146,24 +156,26 @@ async function fetchActiveRecipients(): Promise<string[]> {
       }
 
       for (const event of events.events) {
-        if (event.type === "contract" && Array.isArray(event.contract)) {
-          const topics = event.contract;
+        if (event.type === "contract" && Array.isArray(event.contractId)) {
+          const topics = event.contractId;
           const eventNameTopic = topics[0];
 
           // Match vesting-related event names
           if (eventNameTopic && typeof eventNameTopic === "object") {
-            const eventName = (eventNameTopic as any).sym || String(eventNameTopic);
+            const eventName =
+              (eventNameTopic as any).sym || String(eventNameTopic);
             if (
               eventName.includes("vested") ||
               eventName.includes("created") ||
               eventName.includes("revoked")
             ) {
               // Extract recipient address from event data
-              const eventData = event.data;
+              const eventData = (event as any).data;
               if (Array.isArray(eventData) && eventData.length > 0) {
                 const recipientData = eventData[0];
                 if (recipientData && typeof recipientData === "object") {
-                  const recipientAddr = (recipientData as any).address ||
+                  const recipientAddr =
+                    (recipientData as any).address ||
                     (recipientData as any).recipientAddress ||
                     String(recipientData);
                   if (recipientAddr && recipientAddr.startsWith("G")) {
@@ -181,7 +193,9 @@ async function fetchActiveRecipients(): Promise<string[]> {
     }
 
     const result = Array.from(recipients);
-    console.log(`Fetched ${result.length} active recipients from contract events`);
+    console.log(
+      `Fetched ${result.length} active recipients from contract events`,
+    );
     return result;
   } catch (error) {
     console.error("Failed to fetch active recipients:", error);
@@ -195,20 +209,20 @@ async function maintainInstance(
   contract: Contract,
   keeperKeypair: Keypair,
 ) {
-  console.log('Checking contract instance TTL...');
+  console.log("Checking contract instance TTL...");
   const sourceAccount = await server.getAccount(keeperKeypair.publicKey());
 
   const tx = new TransactionBuilder(
     new Account(sourceAccount.accountId(), sourceAccount.sequenceNumber()),
-    { fee: '100000', networkPassphrase: NETWORK_PASSPHRASE },
+    { fee: "100000", networkPassphrase: NETWORK_PASSPHRASE },
   )
-    .addOperation(contract.call('bump_instance_ttl'))
+    .addOperation(contract.call("bump_instance_ttl"))
     .setTimeout(300)
     .build();
 
   const sim = await server.simulateTransaction(tx);
   if (SorobanRpc.Api.isSimulationError(sim)) {
-    console.log('Instance TTL bump not needed or failed simulation.');
+    console.log("Instance TTL bump not needed or failed simulation.");
     return;
   }
 
@@ -227,20 +241,24 @@ async function maintainRecipient(
   startIndex: number,
   limit: number,
 ) {
-  console.log(`Checking TTL for recipient: ${recipient} (${startIndex}..${startIndex + limit})`);
+  console.log(
+    `Checking TTL for recipient: ${recipient} (${startIndex}..${startIndex + limit})`,
+  );
 
   const sourceAccount = await server.getAccount(keeperKeypair.publicKey());
 
   const tx = new TransactionBuilder(
     new Account(sourceAccount.accountId(), sourceAccount.sequenceNumber()),
-    { fee: '100000', networkPassphrase: NETWORK_PASSPHRASE },
+    { fee: "100000", networkPassphrase: NETWORK_PASSPHRASE },
   )
-    .addOperation(contract.call(
-      'maintenance',
-      new Address(recipient).toScVal(),
-      nativeToScVal(startIndex, { type: 'u32' }),
-      nativeToScVal(limit, { type: 'u32' }),
-    ))
+    .addOperation(
+      contract.call(
+        "maintenance",
+        new Address(recipient).toScVal(),
+        nativeToScVal(startIndex, { type: "u32" }),
+        nativeToScVal(limit, { type: "u32" }),
+      ),
+    )
     .setTimeout(300)
     .build();
 
@@ -254,7 +272,9 @@ async function maintainRecipient(
   preparedTx.sign(keeperKeypair);
 
   const result = await server.sendTransaction(preparedTx);
-  console.log(`Maintenance completed for ${recipient} (${startIndex}..${startIndex + limit}): ${result.hash}`);
+  console.log(
+    `Maintenance completed for ${recipient} (${startIndex}..${startIndex + limit}): ${result.hash}`,
+  );
 }
 
 main();

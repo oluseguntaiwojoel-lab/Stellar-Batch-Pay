@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Card,
   CardContent,
@@ -18,22 +18,29 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useWallet } from "@/contexts/WalletContext";
-import { Copy, Wallet, Layers } from "lucide-react";
+import { Copy, Wallet, Layers, Monitor, Moon, Sun } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { AccountProfileCard } from "@/components/dashboard/settings/AccountProfileCard";
 import { NotificationsCard } from "@/components/dashboard/settings/NotificationsCard";
 import { DangerZoneCard } from "@/components/dashboard/settings/DangerZoneCard";
 import { SecuritySettingsCard } from "@/components/dashboard/settings/SecuritySettingsCard";
 import { ApiDeveloperCard } from "@/components/dashboard/settings/ApiDeveloperCard";
+import { useTheme } from "next-themes";
 
 export default function SettingsPage() {
   const { publicKey, connect, disconnect, isConnecting } = useWallet();
+  const { theme, setTheme } = useTheme();
   const { toast } = useToast();
 
   const [defaultNetwork, setDefaultNetwork] = useState<string>("testnet");
   const [defaultAsset, setDefaultAsset] = useState<string>("xlm");
   const [batchValidation, setBatchValidation] = useState(true);
   const [completionNotifications, setCompletionNotifications] = useState(true);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const handleCopyAddress = () => {
     if (publicKey) {
@@ -57,8 +64,8 @@ export default function SettingsPage() {
   return (
     <div className="container max-w-7xl mx-auto py-8 space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-white mb-2">Settings</h1>
-        <p className="text-slate-400">
+        <h1 className="text-3xl font-bold text-foreground mb-2">Settings</h1>
+        <p className="text-muted-foreground">
           Manage your account settings and preferences
         </p>
       </div>
@@ -74,6 +81,50 @@ export default function SettingsPage() {
         </div>
       </div>
 
+      {/* Theme Preferences Section */}
+      <Card className="border-border bg-card text-card-foreground">
+        <CardHeader>
+          <div className="flex items-start gap-4">
+            <div className="p-3 bg-emerald-500/10 rounded-lg">
+              <Sun className="w-6 h-6 text-emerald-500" />
+            </div>
+            <div className="flex-1">
+              <CardTitle className="text-2xl text-card-foreground">
+                Appearance
+              </CardTitle>
+              <CardDescription className="text-muted-foreground">
+                Choose how Stellar BatchPay adapts to your display preferences
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {[
+              { value: "light", label: "Light", icon: Sun },
+              { value: "dark", label: "Dark", icon: Moon },
+              { value: "system", label: "System", icon: Monitor },
+            ].map((option) => {
+              const Icon = option.icon;
+              const selected = mounted && theme === option.value;
+
+              return (
+                <Button
+                  key={option.value}
+                  type="button"
+                  variant={selected ? "default" : "outline"}
+                  className="justify-start gap-3"
+                  aria-pressed={selected}
+                  onClick={() => setTheme(option.value)}
+                >
+                  <Icon className="h-4 w-4" />
+                  {option.label}
+                </Button>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Wallet Connection Section */}
       <Card className="bg-slate-900/50 border-slate-800">

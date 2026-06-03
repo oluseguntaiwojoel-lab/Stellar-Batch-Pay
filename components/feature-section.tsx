@@ -1,7 +1,7 @@
 'use client';
 
 import { CheckCircle2, Zap, Lock, Coins, BarChart3, Globe } from "lucide-react";
-import { motion } from "framer-motion";
+import { MotionSafe } from "@/components/motion-safe";
 
 const features = [
     {
@@ -56,7 +56,7 @@ export function FeatureSection() {
         <section id="features" className="py-24 bg-secondary/30">
             <div className="container px-4 md:px-6 mx-auto">
                 <div className="flex flex-col items-center justify-center space-y-4 text-center mb-16">
-                    <motion.div
+                    <MotionSafe
                         initial={{ opacity: 0, y: 20 }}
                         whileInView={{ opacity: 1, y: 0 }}
                         viewport={{ once: true }}
@@ -67,10 +67,10 @@ export function FeatureSection() {
                         <p className="text-xl text-muted-foreground max-w-[700px] mx-auto">
                             Designed for businesses, DAOs, and developers who need to move money fast.
                         </p>
-                    </motion.div>
+                    </MotionSafe>
                 </div>
 
-                <motion.div
+                <MotionSafe
                     variants={container}
                     initial="hidden"
                     whileInView="show"
@@ -78,7 +78,7 @@ export function FeatureSection() {
                     className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8"
                 >
                     {features.map((feature, index) => (
-                        <motion.div
+                        <MotionSafe
                             key={index}
                             variants={item}
                             whileHover={{ y: -5 }}
@@ -91,9 +91,9 @@ export function FeatureSection() {
                             <p className="text-muted-foreground text-sm leading-relaxed">
                                 {feature.description}
                             </p>
-                        </motion.div>
+                        </MotionSafe>
                     ))}
-                </motion.div>
+                </MotionSafe>
             </div>
         </section>
     );

@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { motion } from 'framer-motion';
+import { MotionSafe } from "@/components/motion-safe";
 
 export const AboutHero = () => {
     return (
@@ -14,7 +14,7 @@ export const AboutHero = () => {
 
             <div className="relative z-10 max-w-4xl mx-auto px-6 flex flex-col items-center text-center space-y-10 md:space-y-12">
                 {/* Badge */}
-                <motion.div 
+                <MotionSafe 
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.5 }}
@@ -22,37 +22,37 @@ export const AboutHero = () => {
                 >
                     <div className="w-2 h-2 rounded-full bg-[#00D4AA] shadow-[0_0_8px_rgba(0,212,170,0.8)]" />
                     <span className="text-sm font-medium text-gray-300 tracking-wide">Powered by Stellar Blockchain</span>
-                </motion.div>
+                </MotionSafe>
 
                 {/* Main Content */}
                 <div className="space-y-8">
-                    <motion.h1 
+                    <MotionSafe as="h1" 
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.5, delay: 0.1 }}
                         className="text-4xl md:text-5xl lg:text-[64px] font-extrabold tracking-tight text-white leading-[1.1]"
                     >
                         About Stellar BatchPay
-                    </motion.h1>
+                    </MotionSafe>
 
                     <div className="space-y-6">
-                        <motion.h2 
+                        <MotionSafe as="h2" 
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ duration: 0.5, delay: 0.2 }}
                             className="text-xl md:text-2xl lg:text-[28px] text-[#00D4AA] font-medium max-w-3xl mx-auto leading-snug tracking-tight"
                         >
                             Simplifying bulk cryptocurrency payments on the Stellar blockchain.
-                        </motion.h2>
+                        </MotionSafe>
 
-                        <motion.p 
+                        <MotionSafe as="p" 
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ duration: 0.5, delay: 0.3 }}
                             className="text-base md:text-[18px] text-[#9CA3AF] max-w-[620px] mx-auto leading-[1.8]"
                         >
                             Our platform helps teams automate cryptocurrency payouts efficiently and securely, eliminating manual processes and reducing operational overhead while maintaining complete transparency and control.
-                        </motion.p>
+                        </MotionSafe>
                     </div>
                 </div>
             </div>
