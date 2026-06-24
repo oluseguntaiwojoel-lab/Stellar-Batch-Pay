@@ -115,6 +115,21 @@ function getDb(): Database.Database {
     );
 
     CREATE INDEX IF NOT EXISTS idx_idempotency_keys_expiresAt ON idempotency_keys (expiresAt);
+
+    CREATE TABLE IF NOT EXISTS webhook_deliveries (
+      id           TEXT PRIMARY KEY,
+      webhookId    TEXT NOT NULL,
+      jobId        TEXT,
+      event        TEXT NOT NULL,
+      status       TEXT NOT NULL,
+      responseCode INTEGER,
+      retryCount   INTEGER NOT NULL DEFAULT 0,
+      error        TEXT,
+      deliveredAt  TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_webhookId ON webhook_deliveries (webhookId);
+    CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_jobId ON webhook_deliveries (jobId);
   `);
 
   const columns = _db.prepare("PRAGMA table_info(jobs)").all() as Array<{ name: string }>;
@@ -473,4 +488,81 @@ export function countJobs(opts?: JobQueryFilters): number {
     .prepare(`SELECT COUNT(*) as cnt FROM jobs ${where}`)
     .get(...params) as { cnt: number };
   return row.cnt;
+}
+
+// ---------------------------------------------------------------------------
+// Webhook delivery log
+// ---------------------------------------------------------------------------
+
+export interface WebhookDeliveryLog {
+  webhookId: string;
+  jobId?: string;
+  event: string;
+  status: "success" | "failed";
+  responseCode?: number;
+  retryCount: number;
+  error?: string;
+}
+
+export interface WebhookDelivery extends WebhookDeliveryLog {
+  id: string;
+  deliveredAt: string;
+}
+
+/**
+ * Record the outcome of a single webhook delivery attempt.
+ * Called synchronously from triggerWebhooksWithRetry — uses better-sqlite3's
+ * sync API so no await is required at the call site.
+ */
+export function logWebhookDelivery(entry: WebhookDeliveryLog): void {
+  const db = getDb();
+  db.prepare(`
+    INSERT INTO webhook_deliveries (id, webhookId, jobId, event, status, responseCode, retryCount, error, deliveredAt)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    crypto.randomUUID(),
+    entry.webhookId,
+    entry.jobId ?? null,
+    entry.event,
+    entry.status,
+    entry.responseCode ?? null,
+    entry.retryCount,
+    entry.error ?? null,
+    new Date().toISOString(),
+  );
+}
+
+/**
+ * Retrieve webhook delivery records, optionally filtered by jobId or webhookId.
+ * Returns newest-first, capped at `limit` rows (default 100).
+ */
+export function getWebhookDeliveries(opts?: {
+  jobId?: string;
+  webhookId?: string;
+  limit?: number;
+}): WebhookDelivery[] {
+  const db = getDb();
+  const limit = opts?.limit ?? 100;
+
+  if (opts?.jobId) {
+    return db
+      .prepare(
+        "SELECT * FROM webhook_deliveries WHERE jobId = ? ORDER BY deliveredAt DESC LIMIT ?",
+      )
+      .all(opts.jobId, limit) as WebhookDelivery[];
+  }
+
+  if (opts?.webhookId) {
+    return db
+      .prepare(
+        "SELECT * FROM webhook_deliveries WHERE webhookId = ? ORDER BY deliveredAt DESC LIMIT ?",
+      )
+      .all(opts.webhookId, limit) as WebhookDelivery[];
+  }
+
+  return db
+    .prepare(
+      "SELECT * FROM webhook_deliveries ORDER BY deliveredAt DESC LIMIT ?",
+    )
+    .all(limit) as WebhookDelivery[];
 }

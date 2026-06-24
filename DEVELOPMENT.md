@@ -160,11 +160,19 @@ To work on the Soroban smart contracts, you need:
 
 We use the [Stellar Quickstart](https://github.com/stellar/docker-stellar-quickstart) Docker image to run a local network with Soroban RPC enabled.
 
-1. **Start the local node**:
+1. **Start the full stack** (Stellar node + Next.js app):
    ```bash
-   docker-compose up -d
+   docker compose up -d
    ```
-   This starts a standalone network with Horizon on port `8000` and Soroban RPC on port `8001`.
+   This starts both the Stellar quickstart node and the Next.js app:
+   - Horizon on port `8000`
+   - Soroban RPC on port `8001`
+   - Next.js app on port `3000`
+
+   To run only the Stellar node (e.g. during active development with `npm run dev`):
+   ```bash
+   docker compose up -d stellar
+   ```
 
 2. **Configure Stellar CLI for Local**:
    ```bash

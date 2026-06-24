@@ -15,6 +15,22 @@ services:
     networks:
       - stellar-network
 
+  app:
+    build: .
+    container_name: stellar-batch-pay-app
+    ports:
+      - "3000:3000"
+    environment:
+      - SOROBAN_RPC_URL=http://stellar:8001
+      - NEXT_PUBLIC_HORIZON_URL=http://stellar:8000
+      - NODE_ENV=production
+    depends_on:
+      - stellar
+    volumes:
+      - ./data:/app/data
+    networks:
+      - stellar-network
+
 volumes:
   stellar-data:
 
