@@ -13,7 +13,6 @@ import { createSecretsProvider } from "../lib/secrets/index";
 import {
   decodeTopicValue,
   parseVestingEventRecipient,
-  parseVestingTransferred,
 } from "../lib/stellar/vesting-events";
 
 /**
@@ -245,35 +244,24 @@ async function fetchActiveRecipients(): Promise<string[]> {
       }
 
       for (const event of events.events) {
-        if (event.type === "contract" && Array.isArray(event.contractId)) {
-          const topics = event.contractId;
-          const eventNameTopic = topics[0];
+        if (event.type !== "contract") continue;
+        const topics: unknown[] = Array.isArray((event as any).topic)
+          ? (event as any).topic
+          : Array.isArray(event.contractId)
+            ? event.contractId
+            : [];
 
-          // Match vesting-related event names
-          if (eventNameTopic && typeof eventNameTopic === "object") {
-            const eventName =
-              (eventNameTopic as any).sym || String(eventNameTopic);
-            if (
-              eventName.includes("vested") ||
-              eventName.includes("created") ||
-              eventName.includes("revoked")
-            ) {
-              // Extract recipient address from event data
-              const eventData = (event as any).data;
-              if (Array.isArray(eventData) && eventData.length > 0) {
-                const recipientData = eventData[0];
-                if (recipientData && typeof recipientData === "object") {
-                  const recipientAddr =
-                    (recipientData as any).address ||
-                    (recipientData as any).recipientAddress ||
-                    String(recipientData);
-                  if (recipientAddr && recipientAddr.startsWith("G")) {
-                    recipients.add(recipientAddr);
-                  }
-                }
-              }
-            }
-          }
+        const eventName = decodeTopicValue(topics[0]);
+        if (!eventName) {
+          console.log(`Skipping event with undecodable name`);
+          continue;
+        }
+
+        const recipient = parseVestingEventRecipient(eventName, topics);
+        if (recipient) {
+          recipients.add(recipient);
+        } else {
+          console.log(`Skipping unknown event type: ${eventName}`);
         }
       }
 
