@@ -2,13 +2,14 @@
 
 import { PaymentInstruction } from '@/lib/stellar/types';
 import { formatAmount } from '@/lib/stellar';
+import { sumStellarAmounts, formatStellarAmount } from '@/lib/stellar/utils';
 
 interface BatchSummaryProps {
   payments: PaymentInstruction[];
 }
 
 export function BatchSummary({ payments }: BatchSummaryProps) {
-  const totalAmount = payments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
+  const totalAmount = formatStellarAmount(sumStellarAmounts(payments.map(p => p.amount)));
   
   // Group by asset
   const assetGroups = payments.reduce((acc, p) => {
@@ -37,7 +38,7 @@ export function BatchSummary({ payments }: BatchSummaryProps) {
         <h3 className="font-semibold mb-3">Assets Breakdown</h3>
         <div className="space-y-2">
           {Object.entries(assetGroups).map(([asset, items]) => {
-            const amount = items.reduce((sum, p) => sum + parseFloat(p.amount), 0);
+            const amount = formatStellarAmount(sumStellarAmounts(items.map(p => p.amount)));
             return (
               <div key={asset} className="flex justify-between text-sm">
                 <span className="text-foreground">{asset}</span>

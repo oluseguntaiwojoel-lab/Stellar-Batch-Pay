@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { motion } from 'framer-motion';
+import { MotionSafe } from "@/components/motion-safe";
 
 interface FeatureCard {
   icon: ReactNode;
@@ -111,7 +111,7 @@ export function ProfessionalTeamsSection() {
       <div className="container px-4 md:px-6 mx-auto">
         {/* Header */}
         <div className="text-center max-w-2xl mx-auto mb-16">
-          <motion.div
+          <MotionSafe
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
@@ -143,11 +143,11 @@ export function ProfessionalTeamsSection() {
               Everything you need to manage bulk cryptocurrency payments with
               confidence and precision.
             </p>
-          </motion.div>
+          </MotionSafe>
         </div>
 
         {/* Feature Cards Grid */}
-        <motion.div
+        <MotionSafe
           variants={containerVariants}
           initial="hidden"
           whileInView="visible"
@@ -155,7 +155,7 @@ export function ProfessionalTeamsSection() {
           className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-6xl mx-auto"
         >
           {features.map((feature, index) => (
-            <motion.div
+            <MotionSafe
               key={index}
               variants={cardVariants}
               className="rounded-xl p-8 border transition-colors duration-300 hover:border-[#10B981]/30"
@@ -187,9 +187,9 @@ export function ProfessionalTeamsSection() {
               >
                 {feature.description}
               </p>
-            </motion.div>
+            </MotionSafe>
           ))}
-        </motion.div>
+        </MotionSafe>
       </div>
     </section>
   );

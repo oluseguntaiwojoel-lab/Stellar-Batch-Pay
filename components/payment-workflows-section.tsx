@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { MotionSafe } from "@/components/motion-safe";
 
 const workflows = [
   {
@@ -276,7 +276,7 @@ export function PaymentWorkflowsSection() {
     >
       {/* Header */}
       <div className="max-w-3xl mx-auto text-center mb-14">
-        <motion.h2
+        <MotionSafe as="h2"
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
@@ -286,8 +286,8 @@ export function PaymentWorkflowsSection() {
         >
           Designed for{" "}
           <span style={{ color: "#00D98B" }}>Real Payment Workflows</span>
-        </motion.h2>
-        <motion.p
+        </MotionSafe>
+        <MotionSafe as="p"
           initial={{ opacity: 0, y: 16 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
@@ -297,11 +297,11 @@ export function PaymentWorkflowsSection() {
         >
           Trusted by teams across industries for their most critical payment
           operations.
-        </motion.p>
+        </MotionSafe>
       </div>
 
       {/* Cards Grid */}
-      <motion.div
+      <MotionSafe
         variants={container}
         initial="hidden"
         whileInView="show"
@@ -309,7 +309,7 @@ export function PaymentWorkflowsSection() {
         className="max-w-6xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5"
       >
         {workflows.map(({ icon, iconBg, title, description }) => (
-          <motion.div
+          <MotionSafe
             key={title}
             variants={item}
             whileHover={{ y: -4, scale: 1.01 }}
@@ -352,9 +352,9 @@ export function PaymentWorkflowsSection() {
                 {description}
               </p>
             </div>
-          </motion.div>
+          </MotionSafe>
         ))}
-      </motion.div>
+      </MotionSafe>
     </section>
   );
 }

@@ -1,6 +1,5 @@
 'use client'
 
-import { motion } from 'framer-motion'
 import { X } from 'lucide-react'
 import {
   Table,
@@ -11,6 +10,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { cn } from '@/lib/utils'
+import { MotionSafe } from '@/components/motion-safe'
 
 interface FeatureRow {
   feature: string
@@ -63,7 +63,7 @@ export function CompareFeatures() {
       <div className="max-w-[1200px] mx-auto px-6 sm:px-8 md:px-12">
         {/* Section Heading */}
         <div className="text-center mb-12">
-          <motion.h2
+          <MotionSafe as="h2"
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
@@ -71,11 +71,11 @@ export function CompareFeatures() {
             className="text-3xl sm:text-4xl md:text-5xl font-bold text-white tracking-tight"
           >
             Compare Features
-          </motion.h2>
+          </MotionSafe>
         </div>
 
         {/* Table Wrapper (Card) */}
-        <motion.div
+        <MotionSafe
           initial={{ opacity: 0, y: 30 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
@@ -116,7 +116,7 @@ export function CompareFeatures() {
               ))}
             </TableBody>
           </Table>
-        </motion.div>
+        </MotionSafe>
       </div>
     </section>
   )

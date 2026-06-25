@@ -23,7 +23,7 @@ describe("Transaction status query parameters", () => {
   });
 
   test("Horizon testnet URL is correct", () => {
-    const network = "testnet";
+    const network: string = "testnet";
     const url =
       network === "testnet"
         ? "https://horizon-testnet.stellar.org"
@@ -32,7 +32,7 @@ describe("Transaction status query parameters", () => {
   });
 
   test("Horizon mainnet URL is correct", () => {
-    const network = "mainnet";
+    const network: string = "mainnet";
     const url =
       network === "testnet"
         ? "https://horizon-testnet.stellar.org"

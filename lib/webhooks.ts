@@ -22,12 +22,53 @@ export interface WebhookRegistrationRedacted {
 const PRIVATE_HOSTNAME_RE =
   /^(localhost|127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+)$/i;
 
+// Link-local / cloud metadata ranges: 169.254.0.0/16 and IPv6 link-local.
+const LINK_LOCAL_RE = /^169\.254\.\d+\.\d+$/;
+const IPV6_LOOPBACK_RE = /^(::1|0*:0*:0*:0*:0*:0*:0*:1)$/i;
+// Well-known metadata hostnames used by cloud providers.
+const METADATA_HOSTNAME_RE =
+  /^(metadata\.google\.internal|metadata\.goog|169\.254\.169\.254|fd00:ec2::254)$/i;
+
+/**
+ * Decode all common IP obfuscation forms to a dotted-decimal string.
+ * Handles decimal (2130706433), octal (0177.0.0.1), and hex (0x7f000001).
+ */
+function normalizePossibleIp(hostname: string): string {
+  // Pure decimal integer encoding (e.g. 2130706433 → 127.0.0.1)
+  if (/^\d+$/.test(hostname)) {
+    const n = parseInt(hostname, 10);
+    if (n >= 0 && n <= 0xffffffff) {
+      return [
+        (n >>> 24) & 0xff,
+        (n >>> 16) & 0xff,
+        (n >>> 8) & 0xff,
+        n & 0xff,
+      ].join(".");
+    }
+  }
+  // Hex encoding (e.g. 0x7f000001)
+  if (/^0x[0-9a-f]+$/i.test(hostname)) {
+    const n = parseInt(hostname, 16);
+    if (n >= 0 && n <= 0xffffffff) {
+      return [
+        (n >>> 24) & 0xff,
+        (n >>> 16) & 0xff,
+        (n >>> 8) & 0xff,
+        n & 0xff,
+      ].join(".");
+    }
+  }
+  return hostname;
+}
+
 /**
  * Validate that a webhook target URL is safe for server-side delivery.
  *
  * Rules:
  *  - Must use HTTPS (not HTTP).
- *  - Hostname must not resolve to RFC1918 / localhost addresses.
+ *  - Hostname must not resolve to RFC1918, localhost, link-local (169.254/16),
+ *    IPv6 loopback (::1), or cloud metadata service addresses.
+ *  - Decimal/hex/octal IP encodings are normalised before checking.
  *
  * Returns `null` on success or an error string on failure.
  */
@@ -43,8 +84,22 @@ export function validateWebhookUrl(rawUrl: string): string | null {
     return "Webhook URL must use HTTPS.";
   }
 
-  if (PRIVATE_HOSTNAME_RE.test(parsed.hostname)) {
+  const hostname = normalizePossibleIp(parsed.hostname);
+
+  if (PRIVATE_HOSTNAME_RE.test(hostname)) {
     return "Webhook URL must not target private/local addresses.";
+  }
+
+  if (LINK_LOCAL_RE.test(hostname)) {
+    return "Webhook URL must not target link-local addresses (169.254.0.0/16).";
+  }
+
+  if (IPV6_LOOPBACK_RE.test(hostname)) {
+    return "Webhook URL must not target IPv6 loopback addresses.";
+  }
+
+  if (METADATA_HOSTNAME_RE.test(hostname)) {
+    return "Webhook URL must not target cloud metadata service addresses.";
   }
 
   return null;
@@ -66,9 +121,32 @@ export function registerWebhook(url: string, events: string[], secret?: string):
 }
 
 export function verifyWebhookSignature(payload: string, secret: string, signature: string): boolean {
+  // #332: Validate signature format before timing-safe comparison.
+  // timingSafeEqual throws if buffers have different lengths; gracefully
+  // reject malformed input to avoid 500 errors and DoS on bad client signatures.
+  if (!signature || signature.length === 0) {
+    return false;
+  }
+
+  // Validate hex format: must be even length (hex pairs)
+  if (signature.length % 2 !== 0) {
+    return false;
+  }
+
+  // Validate characters are hex digits
+  if (!/^[0-9a-fA-F]*$/.test(signature)) {
+    return false;
+  }
+
   const expectedSignature = crypto.createHmac('sha256', secret)
     .update(payload)
     .digest('hex');
+
+  // Length check before timingSafeEqual to prevent throws
+  if (signature.length !== expectedSignature.length) {
+    return false;
+  }
+
   return crypto.timingSafeEqual(Buffer.from(signature, 'hex'), Buffer.from(expectedSignature, 'hex'));
 }
 
@@ -124,4 +202,109 @@ export async function triggerWebhooks(eventName: string, payload: any) {
   );
 
   return results;
+}
+
+const MAX_RETRIES = 4;
+const BASE_DELAY_MS = 500;
+
+/**
+ * Deliver a webhook event to all matching registrations with exponential backoff
+ * on 5xx / network errors. Logs each attempt to the webhook_deliveries table.
+ */
+export async function triggerWebhooksWithRetry(
+  eventName: string,
+  payload: any,
+  jobId?: string,
+): Promise<void> {
+  // Lazy import to avoid circular dependency at module load time
+  const { logWebhookDelivery } = await import("./job-store");
+
+  const targets = webhooks.filter(
+    (w) => w.events.includes(eventName) || w.events.includes("*"),
+  );
+
+  await Promise.allSettled(
+    targets.map(async (webhook) => {
+      const timestamp = new Date().toISOString();
+      const bodyPayload = { event: eventName, payload, timestamp };
+      const body = JSON.stringify(bodyPayload);
+      const signature = crypto
+        .createHmac("sha256", webhook.secret)
+        .update(body)
+        .digest("hex");
+
+      let attempt = 0;
+      while (attempt <= MAX_RETRIES) {
+        try {
+          const response = await fetch(webhook.url, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Stellar-Batch-Pay-Event": eventName,
+              "x-webhook-signature": signature,
+            },
+            body,
+          });
+
+          if (response.ok) {
+            logWebhookDelivery({
+              webhookId: webhook.id,
+              jobId,
+              event: eventName,
+              status: "success",
+              responseCode: response.status,
+              retryCount: attempt,
+            });
+            return;
+          }
+
+          // 4xx — don't retry
+          if (response.status < 500) {
+            logWebhookDelivery({
+              webhookId: webhook.id,
+              jobId,
+              event: eventName,
+              status: "failed",
+              responseCode: response.status,
+              retryCount: attempt,
+              error: `HTTP ${response.status}`,
+            });
+            return;
+          }
+
+          // 5xx — fall through to retry
+          if (attempt === MAX_RETRIES) {
+            logWebhookDelivery({
+              webhookId: webhook.id,
+              jobId,
+              event: eventName,
+              status: "failed",
+              responseCode: response.status,
+              retryCount: attempt,
+              error: `HTTP ${response.status} after ${attempt} retries`,
+            });
+            return;
+          }
+        } catch (err) {
+          if (attempt === MAX_RETRIES) {
+            logWebhookDelivery({
+              webhookId: webhook.id,
+              jobId,
+              event: eventName,
+              status: "failed",
+              retryCount: attempt,
+              error: err instanceof Error ? err.message : "Unknown error",
+            });
+            return;
+          }
+        }
+
+        // Exponential backoff: 500ms, 1s, 2s, 4s
+        await new Promise((r) =>
+          setTimeout(r, BASE_DELAY_MS * Math.pow(2, attempt)),
+        );
+        attempt++;
+      }
+    }),
+  );
 }

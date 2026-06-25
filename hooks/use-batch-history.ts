@@ -1,46 +1,54 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { BatchResult } from '@/lib/stellar/types';
+import { fetchBatchHistory, setCachedHistory, clearCachedHistory } from '@/lib/batch-history-adapter';
 
-const STORAGE_KEY = 'stellar_batch_pay_history';
+export function useBatchHistory(publicKey?: string | null) {
+  const queryClient = useQueryClient();
+  const queryKey = ['batch-history', publicKey] as const;
 
-export function useBatchHistory() {
-  const [history, setHistory] = useState<BatchResult[]>([]);
-
-  // Load history from localStorage on mount
-  useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      try {
-        setHistory(JSON.parse(stored));
-      } catch (e) {
-        console.error('Failed to parse batch history', e);
-      }
-    }
-  }, []);
+  const { data: history = [], isLoading, error } = useQuery({
+    queryKey,
+    queryFn: async () => {
+      const items = await fetchBatchHistory(publicKey!, { limit: 50 });
+      setCachedHistory(items);
+      return items;
+    },
+    enabled: !!publicKey,
+    staleTime: 30 * 1000,
+    placeholderData: (previousData) => previousData ?? [],
+  });
 
   const saveResult = useCallback((result: BatchResult) => {
-    setHistory((prev) => {
-      const newHistory = [result, ...prev].slice(0, 50); // Keep last 50 batches
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(newHistory));
+    queryClient.setQueryData<BatchResult[]>(queryKey, (prev = []) => {
+      const newHistory = [result, ...prev].slice(0, 50);
+      setCachedHistory(newHistory);
       return newHistory;
     });
-  }, []);
+  }, [queryClient, queryKey]);
 
-  const getLatestResult = useCallback(() => {
+  const getLatestResult = useCallback((): BatchResult | null => {
     return history[0] || null;
   }, [history]);
 
   const clearHistory = useCallback(() => {
-    localStorage.removeItem(STORAGE_KEY);
-    setHistory([]);
-  }, []);
+    clearCachedHistory();
+    queryClient.setQueryData<BatchResult[]>(queryKey, []);
+  }, [queryClient, queryKey]);
+
+  const refresh = useCallback(() => {
+    return queryClient.invalidateQueries({ queryKey });
+  }, [queryClient, queryKey]);
 
   return {
     history,
+    loading: isLoading,
+    error: error ? (error instanceof Error ? error.message : 'Failed to load history') : null,
     saveResult,
     getLatestResult,
     clearHistory,
+    refresh,
   };
 }

@@ -1,9 +1,12 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { ExternalLink, ChevronDown, Loader2 } from "lucide-react"
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { useRouter } from "next/navigation"
+import { useQuery } from "@tanstack/react-query"
+import { ChevronDown, ChevronUp, ChevronRight, Loader2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { useWallet } from "@/contexts/WalletContext"
 import { cn } from "@/lib/utils"
 
 export interface HistoricalBatch {
@@ -19,13 +22,16 @@ export interface HistoricalBatch {
 }
 
 interface HistoryTableProps {
-  /** Optional override — if omitted the component fetches from /api/batch-history */
   data?: HistoricalBatch[]
   className?: string
   page?: number
   limit?: number
   statusFilter?: string
   networkFilter?: string
+  searchFilter?: string
+  fromFilter?: string
+  onPaginationLoad?: (pagination: { totalPages: number; total: number }) => void
+  onRowsLoad?: (rows: HistoricalBatch[]) => void
 }
 
 function formatDate(iso: string): string {
@@ -54,38 +60,116 @@ function deriveDisplayStatus(batch: HistoricalBatch): "Success" | "Partial" | "F
   return "Success"
 }
 
-export function HistoryTable({ data, className, page = 1, limit = 20, statusFilter, networkFilter }: HistoryTableProps) {
-  const [rows, setRows]       = useState<HistoricalBatch[]>(data ?? [])
-  const [loading, setLoading] = useState(!data)
-  const [error, setError]     = useState<string | null>(null)
+async function fetchHistory(params: {
+  publicKey: string
+  page: number
+  limit: number
+  statusFilter?: string
+  networkFilter?: string
+  searchFilter?: string
+  fromFilter?: string
+  sort?: string
+  order?: string
+}): Promise<{
+  items: HistoricalBatch[]
+  pagination: { totalPages: number; total: number }
+}> {
+  const urlParams = new URLSearchParams({
+    page: String(params.page),
+    limit: String(params.limit),
+    publicKey: params.publicKey,
+  })
+  if (params.statusFilter) urlParams.set("status", params.statusFilter)
+  if (params.networkFilter) urlParams.set("network", params.networkFilter)
+  if (params.searchFilter?.trim()) urlParams.set("search", params.searchFilter.trim())
+  if (params.fromFilter) urlParams.set("from", params.fromFilter)
+  if (params.sort) urlParams.set("sort", params.sort)
+  if (params.order) urlParams.set("order", params.order)
+
+  const res = await fetch(`/api/batch-history?${urlParams.toString()}`)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.json()
+}
+
+export function HistoryTable({
+  data,
+  className,
+  page = 1,
+  limit = 20,
+  statusFilter,
+  networkFilter,
+  searchFilter,
+  fromFilter,
+  onPaginationLoad,
+  onRowsLoad,
+}: HistoryTableProps) {
+  const router = useRouter()
+  const { publicKey } = useWallet()
+  const [debouncedSearch, setDebouncedSearch] = useState(searchFilter ?? "")
+  const [sortColumn, setSortColumn] = useState<"createdAt" | "updatedAt" | "status">("createdAt")
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc")
+
+  const toggleSort = useCallback((column: "createdAt" | "updatedAt" | "status") => {
+    setSortColumn((prev) => {
+      if (prev === column) {
+        setSortOrder((o) => (o === "asc" ? "desc" : "asc"))
+        return prev
+      }
+      setSortOrder("desc")
+      return column
+    })
+  }, [])
 
   useEffect(() => {
-    if (data) {
-      setRows(data)
-      return
+    const timer = setTimeout(() => setDebouncedSearch(searchFilter ?? ""), 300)
+    return () => clearTimeout(timer)
+  }, [searchFilter])
+
+  const queryKey = useMemo(
+    () => ["batch-history", publicKey, page, limit, statusFilter, networkFilter, debouncedSearch, fromFilter, sortColumn, sortOrder] as const,
+    [publicKey, page, limit, statusFilter, networkFilter, debouncedSearch, fromFilter, sortColumn, sortOrder],
+  )
+
+  const { data: result, isLoading, error } = useQuery({
+    queryKey,
+    queryFn: () =>
+      fetchHistory({
+        publicKey: publicKey!,
+        page,
+        limit,
+        statusFilter,
+        networkFilter,
+        searchFilter: debouncedSearch,
+        fromFilter,
+        sort: sortColumn,
+        order: sortOrder,
+      }),
+    enabled: !!publicKey && !data,
+    staleTime: 30 * 1000,
+    placeholderData: (previousData) =>
+      previousData ?? { items: [], pagination: { totalPages: 1, total: 0 } },
+  })
+
+  const rows = data ?? result?.items ?? []
+
+  useEffect(() => {
+    if (result?.pagination) {
+      onPaginationLoad?.(result.pagination)
     }
+  }, [result?.pagination, onPaginationLoad])
 
-    setLoading(true)
-    setError(null)
+  useEffect(() => {
+    if (result?.items) {
+      onRowsLoad?.(result.items)
+    }
+  }, [result?.items, onRowsLoad])
 
-    const params = new URLSearchParams({
-      page:  String(page),
-      limit: String(limit),
-    })
-    if (statusFilter)  params.set("status",  statusFilter)
-    if (networkFilter) params.set("network", networkFilter)
+  const openBatchDetail = useCallback(
+    (jobId: string) => router.push(`/dashboard/history/${jobId}`),
+    [router],
+  )
 
-    fetch(`/api/batch-history?${params.toString()}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`)
-        return r.json() as Promise<{ items: HistoricalBatch[] }>
-      })
-      .then((body) => setRows(body.items))
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : "Failed to load history"))
-      .finally(() => setLoading(false))
-  }, [data, page, limit, statusFilter, networkFilter])
-
-  if (loading) {
+  if (isLoading && rows.length === 0) {
     return (
       <div className="flex items-center justify-center py-16 text-gray-400 gap-2">
         <Loader2 className="h-5 w-5 animate-spin" />
@@ -94,10 +178,10 @@ export function HistoryTable({ data, className, page = 1, limit = 20, statusFilt
     )
   }
 
-  if (error) {
+  if (error && rows.length === 0) {
     return (
       <div className="flex items-center justify-center py-16 text-red-400">
-        Failed to load batch history: {error}
+        Failed to load batch history: {error instanceof Error ? error.message : "Unknown error"}
       </div>
     )
   }
@@ -118,24 +202,28 @@ export function HistoryTable({ data, className, page = 1, limit = 20, statusFilt
           <thead>
             <tr className="text-xs font-semibold text-gray-500 border-b border-[#1F2937]">
               <th className="pb-4 px-4 whitespace-nowrap">
-                <div className="flex items-center gap-1 cursor-pointer hover:text-gray-300">
-                  Batch ID <ChevronDown className="h-3 w-3" />
+                <div className="flex items-center gap-1">
+                  Batch ID
                 </div>
               </th>
               <th className="pb-4 px-4 whitespace-nowrap">
-                <div className="flex items-center gap-1 cursor-pointer hover:text-gray-300">
-                  Date Submitted <ChevronDown className="h-3 w-3" />
+                <div className="flex items-center gap-1 cursor-pointer hover:text-gray-300" onClick={() => toggleSort("createdAt")}>
+                  Date Submitted {sortColumn === "createdAt" ? (sortOrder === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />) : <ChevronDown className="h-3 w-3 opacity-30" />}
                 </div>
               </th>
               <th className="pb-4 px-4 whitespace-nowrap">Network</th>
               <th className="pb-4 px-4 whitespace-nowrap">Recipients</th>
               <th className="pb-4 px-4 whitespace-nowrap">
-                <div className="flex items-center gap-1 cursor-pointer hover:text-gray-300">
-                  Total Amount <ChevronDown className="h-3 w-3" />
+                <div className="flex items-center gap-1">
+                  Total Amount
                 </div>
               </th>
               <th className="pb-4 px-4 whitespace-nowrap">Transactions</th>
-              <th className="pb-4 px-4 whitespace-nowrap">Status</th>
+              <th className="pb-4 px-4 whitespace-nowrap">
+                <div className="flex items-center gap-1 cursor-pointer hover:text-gray-300" onClick={() => toggleSort("status")}>
+                  Status {sortColumn === "status" ? (sortOrder === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />) : <ChevronDown className="h-3 w-3 opacity-30" />}
+                </div>
+              </th>
               <th className="pb-4 px-4 text-right whitespace-nowrap">Action</th>
             </tr>
           </thead>
@@ -177,7 +265,7 @@ export function HistoryTable({ data, className, page = 1, limit = 20, statusFilt
                     <Button
                       variant="link"
                       className="text-[#00D98B] hover:text-[#00D98B]/80 p-0 h-auto font-medium"
-                      onClick={() => { window.location.href = `/dashboard/history/${batch.jobId}` }}
+                      onClick={() => openBatchDetail(batch.jobId)}
                     >
                       View Details
                     </Button>
@@ -243,9 +331,9 @@ export function HistoryTable({ data, className, page = 1, limit = 20, statusFilt
                 <Button
                   variant="link"
                   className="text-[#00D98B] hover:text-[#00D98B]/80 p-0 h-auto text-xs font-semibold"
-                  onClick={() => { window.location.href = `/dashboard/history/${batch.jobId}` }}
+                  onClick={() => openBatchDetail(batch.jobId)}
                 >
-                  View Details <ExternalLink className="ml-1 h-3 w-3" />
+                  View Details <ChevronRight className="ml-1 h-3 w-3" />
                 </Button>
               </div>
             </div>

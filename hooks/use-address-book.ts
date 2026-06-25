@@ -1,51 +1,53 @@
 import { useState, useEffect } from 'react';
+import {
+  Contact,
+  loadContacts,
+  saveContacts,
+  upsertContact,
+  removeContactById,
+} from '@/lib/address-book-storage';
 
-export interface Contact {
-  id: string;
-  name: string;
-  address: string;
-}
-
-const STORAGE_KEY = 'stellar-batch-pay-address-book';
+export type { Contact };
 
 export function useAddressBook() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        setContacts(JSON.parse(saved));
-      } catch (e) {
-        console.error('Failed to parse address book:', e);
-      }
-    }
+    const { contacts: loadedContacts } = loadContacts();
+    setContacts(loadedContacts);
     setIsLoading(false);
   }, []);
 
-  const saveContacts = (newContacts: Contact[]) => {
+  const saveContactsAndUpdate = (newContacts: Contact[]) => {
     setContacts(newContacts);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(newContacts));
+    saveContacts(newContacts);
   };
 
   const addContact = (name: string, address: string) => {
-    const newContact: Contact = {
-      id: crypto.randomUUID(),
-      name,
-      address,
-    };
-    saveContacts([...contacts, newContact]);
+    setContacts(prev => {
+      const updated = upsertContact(prev, name, address);
+      saveContacts(updated);
+      return updated;
+    });
   };
 
   const updateContact = (id: string, name: string, address: string) => {
-    saveContacts(
-      contacts.map((c) => (c.id === id ? { ...c, name, address } : c))
-    );
+    setContacts(prev => {
+      // Find and remove old contact, then add updated one
+      const filtered = removeContactById(prev, id);
+      const updated = upsertContact(filtered, name, address);
+      saveContacts(updated);
+      return updated;
+    });
   };
 
   const deleteContact = (id: string) => {
-    saveContacts(contacts.filter((c) => c.id !== id));
+    setContacts(prev => {
+      const updated = removeContactById(prev, id);
+      saveContacts(updated);
+      return updated;
+    });
   };
 
   const exportContacts = () => {
@@ -68,17 +70,21 @@ export function useAddressBook() {
           (c) => typeof c.name === 'string' && typeof c.address === 'string'
         );
         if (valid) {
-          const merged = [...contacts];
-          imported.forEach((newContact) => {
-            if (!merged.find((m) => m.address === newContact.address)) {
-              merged.push({
-                id: newContact.id || crypto.randomUUID(),
-                name: newContact.name,
-                address: newContact.address,
-              });
-            }
+          setContacts(prev => {
+            let updated = [...prev];
+            imported.forEach((newContact) => {
+              if (!updated.find((m) => m.address === newContact.address)) {
+                updated.push({
+                  id: newContact.id || crypto.randomUUID(),
+                  name: newContact.name,
+                  address: newContact.address,
+                  addedAt: newContact.addedAt || Date.now(),
+                });
+              }
+            });
+            saveContacts(updated);
+            return updated;
           });
-          saveContacts(merged);
           return true;
         }
       }

@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { motion } from 'framer-motion';
+import { MotionSafe } from "@/components/motion-safe";
 import { Upload, CheckCircle2, Rocket, X, Check } from 'lucide-react';
 
 export const ProductOverview = () => {
@@ -12,7 +12,7 @@ export const ProductOverview = () => {
                 {/* Left Column: Problem & Solution */ }
                 <div className="space-y-12">
                     <div className="space-y-6">
-                        <motion.div 
+                        <MotionSafe 
                             initial={{ opacity: 0, y: 20 }}
                             whileInView={{ opacity: 1, y: 0 }}
                             viewport={{ once: true }}
@@ -20,9 +20,9 @@ export const ProductOverview = () => {
                             className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-[#00D4AA]/10 border border-[#00D4AA]/20"
                         >
                             <span className="text-sm font-semibold text-[#00D4AA] ">Product Overview</span>
-                        </motion.div>
+                        </MotionSafe>
 
-                        <motion.div
+                        <MotionSafe
                             initial={{ opacity: 0, y: 20 }}
                             whileInView={{ opacity: 1, y: 0 }}
                             viewport={{ once: true }}
@@ -31,12 +31,12 @@ export const ProductOverview = () => {
                             <h2 className="text-3xl md:text-4xl font-bold text-white tracking-tight relative inline-block">
                                 The Problem We Solve
                             </h2>
-                        </motion.div>
+                        </MotionSafe>
                     </div>
 
                     <div className="space-y-8">
                         {/* Problem Statement */ }
-                        <motion.div 
+                        <MotionSafe 
                             initial={{ opacity: 0, x: -20 }}
                             whileInView={{ opacity: 1, x: 0 }}
                             viewport={{ once: true }}
@@ -52,10 +52,10 @@ export const ProductOverview = () => {
                                     Processing individual transactions manually is time-consuming, error-prone, and doesn't scale for teams making regular payments to multiple recipients.
                                 </p>
                             </div>
-                        </motion.div>
+                        </MotionSafe>
 
                         {/* Solution Statement */ }
-                        <motion.div 
+                        <MotionSafe 
                             initial={{ opacity: 0, x: -20 }}
                             whileInView={{ opacity: 1, x: 0 }}
                             viewport={{ once: true }}
@@ -71,12 +71,12 @@ export const ProductOverview = () => {
                                     Stellar BatchPay allows you to upload payment lists, validate recipients, and execute hundreds of transactions in a single batch operation on the Stellar blockchain.
                                 </p>
                             </div>
-                        </motion.div>
+                        </MotionSafe>
                     </div>
                 </div>
 
                 {/* Right Column: Process Card */ }
-                <motion.div 
+                <MotionSafe 
                     initial={{ opacity: 0, y: 30 }}
                     whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true }}
@@ -162,7 +162,7 @@ export const ProductOverview = () => {
                             </div>
                         </div>
                     </div>
-                </motion.div>
+                </MotionSafe>
 
             </div>
 

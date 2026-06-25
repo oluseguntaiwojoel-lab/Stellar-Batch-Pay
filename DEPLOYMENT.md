@@ -26,6 +26,40 @@ export LOG_LEVEL="info"
 export NODE_ENV="production"
 ```
 
+### `ALLOW_SERVER_SIGNING` — Server-Side Transaction Signing (#596)
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `ALLOW_SERVER_SIGNING` | `false` (unset) | Allow the server to sign and submit Stellar transactions using `STELLAR_SECRET_KEY` |
+
+**Default behaviour (unset or `"false"`):** The API routes `/api/batch-submit` and `/api/batch-retry` reject server-signing requests with HTTP 403. Users must sign via a connected client wallet (Freighter). This is the safe default for public deployments.
+
+**When `ALLOW_SERVER_SIGNING=true`:** The server signs transactions directly using `STELLAR_SECRET_KEY`. This is appropriate for:
+- Internal/trusted deployments where the server is not publicly accessible
+- Automated test pipelines (e.g. `tests/batch-submit.test.ts` sets this to `"true"`)
+- Staging environments running automated batch jobs
+
+**Security warnings:**
+- `ALLOW_SERVER_SIGNING=true` centralises key risk on the server. A compromised server can sign and submit arbitrary transactions.
+- Never enable on public-facing production endpoints without additional access controls (VPN, IP allowlist, or mutual TLS).
+- Requires `STELLAR_SECRET_KEY` to be set; the flag has no effect without it.
+- Audit all access logs when this flag is active.
+
+```bash
+# Staging / internal use only
+export ALLOW_SERVER_SIGNING=true
+export STELLAR_SECRET_KEY="S..."
+
+# Production (public) — leave unset; users sign via Freighter wallet
+# ALLOW_SERVER_SIGNING is intentionally absent
+```
+
+> **API error when disabled:** `POST /api/batch-submit` or `/api/batch-retry` without server signing enabled returns:
+> ```json
+> { "error": "Server-side signing is disabled. Use client-side signing with a connected wallet, or enable ALLOW_SERVER_SIGNING=true in server configuration." }
+> ```
+> See DEVELOPMENT.md for local test setup using this flag.
+
 ### Environment Variable Management
 
 **Do NOT commit `.env` files or secrets to version control.**
@@ -92,26 +126,42 @@ environments.
 No secret is written to disk, logs, or intermediate environment files in the
 `aws` or `github` backends.
 
-### Keeper Bump Threshold (#332)
+### Keeper Bot Pagination Configuration (#586)
 
-The keeper uses an off-chain TTL pre-check that mirrors the on-chain
-`BUMP_THRESHOLD = 7 * DAY_IN_LEDGERS` constant in `contracts/batch-vesting/src/lib.rs`
-(where `DAY_IN_LEDGERS = 17280`, ~5 s per ledger).
+Recipients with more than `MAINTENANCE_LIMIT` vesting schedule entries require
+multiple keeper runs to receive full TTL coverage. The bot persists a per-recipient
+`nextMaintenanceIndex` cursor between runs so progress is never lost.
 
-| Env var               | Default | Purpose                                                                                 |
-| --------------------- | ------- | --------------------------------------------------------------------------------------- |
-| `BUMP_THRESHOLD_DAYS` | `7`     | Recipients whose `VestingCount` TTL is more than this many days out are skipped.        |
+| Variable | Default | Purpose |
+|---|---|---|
+| `MAINTENANCE_LIMIT` | `10` | Number of schedule indices bumped per recipient per run |
+| `KEEPER_STATE_PATH` | `./data/keeper-state.json` | JSON file storing per-recipient pagination cursors |
 
-Tuning guidance:
+**How many runs to achieve full coverage:**
 
-- Match `BUMP_THRESHOLD_DAYS` to the contract's `BUMP_THRESHOLD` in ledgers
-  (`days * 17280`). If you bump the contract constant, bump this env var the same way.
-- Raise the value to be more conservative (bump earlier, more fees, less risk of
-  expiry). Lower it to save fees in stable conditions.
-- The keeper reads the live-until ledger via Soroban RPC and prioritizes recipients
-  whose entries are closest to expiry. Recipients with healthy TTLs are skipped
-  entirely so we don't pay fees for what the contract's `extend_ttl` would treat
-  as a no-op.
+If a recipient has `S` schedule entries and `MAINTENANCE_LIMIT=L`, full coverage
+requires `ceil(S / L)` consecutive keeper runs. After the final window is processed
+the cursor resets to 0 and the next run begins a fresh sweep.
+
+```
+Example: 50 schedule entries, MAINTENANCE_LIMIT=10 → 5 runs for full coverage.
+```
+
+**Tuning recommendations:**
+
+- Increase `MAINTENANCE_LIMIT` to cover larger recipients in fewer runs. Keep it
+  within Soroban transaction size limits (Stellar enforces a per-transaction instruction
+  cap; values above 50 may require fee increases or encounter simulation errors).
+- Set `KEEPER_STATE_PATH` to a persistent volume path in serverless/containerised
+  deployments so the cursor survives cold starts.
+- Keeper logs per-recipient progress: watch for `cursor reset to 0` lines to confirm
+  a full sweep completed.
+
+```bash
+# Example: tune for recipients with up to 25 entries, 3 runs for full coverage
+export MAINTENANCE_LIMIT=10
+export KEEPER_STATE_PATH=/mnt/data/keeper-state.json
+```
 
 ---
 
@@ -164,6 +214,41 @@ Update your frontend `.env` file with the newly deployed Contract ID:
 NEXT_PUBLIC_CONTRACT_ID="C..."
 ```
 
+## SQLite persistence (batch jobs and rate limits)
+
+The API stores batch jobs in SQLite via `better-sqlite3`. By default:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `JOB_STORE_PATH` | `./data/jobs.db` | Durable batch job state |
+| `RATE_LIMIT_DB_PATH` | `./data/rate-limit.db` | Per-key API rate limiting |
+
+Vercel serverless functions use a read-only filesystem except `/tmp`. Without
+explicit paths, job persistence can fail silently or reset on every cold start.
+
+**Recommended hosting:**
+
+1. **Serverful Node** — long-running `next start`, PM2, or Docker with a writable `data/` directory.
+2. **Persistent volume** — mount a volume at `data/` (Kubernetes PVC, ECS EFS, etc.).
+3. **Managed SQL** — replace SQLite with Turso, Postgres, or another shared store (requires application changes).
+
+**Ephemeral demo on serverless** (data is lost between invocations):
+
+```bash
+export JOB_STORE_PATH=/tmp/jobs.db
+export RATE_LIMIT_DB_PATH=/tmp/rate-limit.db
+```
+
+**Health check** — verify directories are writable before routing traffic:
+
+```bash
+curl -s http://localhost:3000/api/health
+# Returns 200 when job_store and rate_limit paths are writable, 503 otherwise
+```
+
+Set `JOB_STORE_PATH` and `RATE_LIMIT_DB_PATH` in the same environment as your
+API routes (Vercel project settings, Docker env, or systemd unit).
+
 ## Hosting Options
 
 ### Option 1: Vercel (Recommended for Next.js)
@@ -197,13 +282,8 @@ For flexibility and multi-platform deployment, use the committed
 [`Dockerfile`](../Dockerfile) at the repo root. It is a multi-stage build
 based on `node:22-alpine` that:
 
-- Installs `python3 / make / g++ / libc6-compat` so `better-sqlite3`'s
-  Alpine/musl rebuild fallback works on platforms without a prebuild.
-- Runs `next build` in a builder stage and prunes dev dependencies.
-- Drops privileges to a non-root `app` user in the runtime stage.
-- Exposes a `/app/data` volume for the SQLite job/batch store
-  (`lib/job-store.ts`, `lib/batch-persistence.ts`) so persistence survives
-  container restarts.
+```dockerfile
+FROM node:22-alpine
 
 The accompanying `.dockerignore` keeps `node_modules`, `.next`,
 `contracts/target`, `.env*`, and `data/` out of the build context.
@@ -389,25 +469,29 @@ Sentry.init({
 // Errors are automatically captured
 ```
 
-### Log Aggregation
+### Log Aggregation & Structured Request Logging
 
-Send logs to centralized service:
+The application includes a structured JSON logger located at `lib/logger.ts` and Next.js middleware that assigns a unique correlation ID (`x-request-id`) to every incoming API request. The logger automatically anonymizes sensitive Stellar public keys (e.g., truncating them to `GB3...XYZ`) and outputs logs in JSON format:
 
-```typescript
-// Example with Winston and ELK Stack
-import winston from 'winston';
-
-const logger = winston.createLogger({
-  transports: [
-    new winston.transports.File({ filename: 'error.log', level: 'error' }),
-    new winston.transports.File({ filename: 'combined.log' }),
-    new winston.transports.Http({
-      host: 'logs.example.com',
-      path: '/api/logs',
-    }),
-  ],
-});
+```json
+{"level":"info","timestamp":"2026-05-31T20:00:00.000Z","requestId":"a4f9c8f0-1e0f-4d77-9db6-9afcd21b8d05","jobId":"5f8b3c20-3b02-4e63-bd4f-3f6291a13bfd","publicKey":"GB3...XYZ","network":"testnet","msg":"Batch submit job queued and background worker triggered"}
 ```
+
+#### Datadog / CloudWatch Integration
+
+1. **Datadog log ingestion**:
+   - Ensure the Next.js runtime environment sends stdout/stderr logs directly.
+   - In Datadog log configuration, enable the JSON parser so fields like `level`, `requestId`, and `jobId` are automatically parsed into searchable attributes.
+   - Configure a mapping for standard attributes: map `level` to status, `timestamp` to date, and `msg` to message.
+
+2. **AWS CloudWatch**:
+   - Structured JSON logs are automatically parsed by CloudWatch logs.
+   - Use CloudWatch Logs Insights to query and trace invocations across serverless instances using `requestId` or `jobId`:
+     ```sql
+     fields @timestamp, level, requestId, jobId, msg
+     | filter requestId = "a4f9c8f0-1e0f-4d77-9db6-9afcd21b8d05"
+     | sort @timestamp asc
+     ```
 
 ## Database Setup (Optional)
 
@@ -645,7 +729,7 @@ pm2 stop stellar-bulk-pay
 git checkout main && npm run build && pm2 start stellar-bulk-pay
 
 # 5. Verify
-curl http://localhost:3000/health
+curl http://localhost:3000/api/health
 ```
 
 ## Support

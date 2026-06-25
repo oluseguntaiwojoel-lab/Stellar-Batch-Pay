@@ -15,24 +15,34 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
+import { Keypair } from 'stellar-sdk';
 
-const CONTRACT_ID = 'CCONTRACT000000000000000000000000000000000000000000000000';
-const PUBLIC_KEY = 'GBBD47UZM2HN7D7XZIZVG4KVAUC36THN5BES6RMNNOK5TUNXAUCVMAKER';
-const RECIPIENT_A = 'GBJCHUKZMTFSLOMNC7P4TS4VJJBTCYL3AEYZ7R37ZJNHYQM7MDEBC67H';
-const RECIPIENT_B = 'GCNY5OXYSY4FKHOPT2SPOQZAOEIGKKAOMWCUT5LPYYCVYHI4OW7MFTDA';
+const VALID_CONTRACT_ID =
+  'CAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQMCJ';
+const CONTRACT_ID = VALID_CONTRACT_ID;
+const PUBLIC_KEY = Keypair.random().publicKey();
+const RECIPIENT_A = Keypair.random().publicKey();
+const RECIPIENT_B = Keypair.random().publicKey();
+
+const {
+  contractCallSpy,
+  simulateSpy,
+  assembleSpy,
+  getAccountSpy,
+} = vi.hoisted(() => ({
+  contractCallSpy: vi.fn(),
+  simulateSpy: vi.fn(),
+  assembleSpy: vi.fn(),
+  getAccountSpy: vi.fn(async (id: string) => ({
+    accountId: () => id,
+    sequenceNumber: () => '0',
+  })),
+}));
 
 // ── stellar-sdk mock ──────────────────────────────────────────────────────
 // Mock only the surface the vesting helper actually touches. The rest of
 // stellar-sdk (StrKey, Asset, etc.) is left to the real module so other
 // suites that import this file keep working.
-
-const contractCallSpy = vi.fn();
-const simulateSpy = vi.fn();
-const assembleSpy = vi.fn();
-const getAccountSpy = vi.fn(async () => ({
-  accountId: () => PUBLIC_KEY,
-  sequenceNumber: () => '0',
-}));
 
 vi.mock('stellar-sdk', async () => {
   const actual = await vi.importActual<typeof import('stellar-sdk')>('stellar-sdk');
@@ -120,6 +130,7 @@ describe('buildDepositTransaction — Soroban arg encoding', () => {
       payments,
       1_000,
       2_000,
+      500,
       100,
       'testnet',
       PUBLIC_KEY,
@@ -137,14 +148,15 @@ describe('buildDepositTransaction — Soroban arg encoding', () => {
       payments,
       1_000,
       2_000,
+      500,
       100,
       'testnet',
       PUBLIC_KEY,
     );
 
     const [, , args] = contractCallSpy.mock.calls[0];
-    // sender, tokens, recipients, amounts, start_time, end_time, vesting_step, memos
-    expect(args).toHaveLength(8);
+    // sender, tokens, recipients, amounts, start_time, end_time, cliff_time, vesting_step, memos
+    expect(args).toHaveLength(9);
   });
 
   test('XLM payments are routed via the testnet SAC token id', async () => {
@@ -153,6 +165,7 @@ describe('buildDepositTransaction — Soroban arg encoding', () => {
       payments,
       1_000,
       2_000,
+      500,
       100,
       'testnet',
       PUBLIC_KEY,
@@ -172,6 +185,7 @@ describe('buildDepositTransaction — Soroban arg encoding', () => {
       payments,
       1_000,
       2_000,
+      500,
       100,
       'mainnet',
       PUBLIC_KEY,
@@ -187,6 +201,7 @@ describe('buildDepositTransaction — Soroban arg encoding', () => {
       payments,
       1_000,
       2_000,
+      500,
       100,
       'testnet',
       PUBLIC_KEY,
@@ -203,6 +218,7 @@ describe('buildDepositTransaction — Soroban arg encoding', () => {
         payments,
         1_000,
         2_000,
+        500,
         100,
         'testnet',
         PUBLIC_KEY,

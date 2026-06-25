@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ArrowRight } from "lucide-react";
-import { motion } from "framer-motion";
+import { MotionSafe } from "@/components/motion-safe";
 
 export function CtaSection() {
     return (
@@ -12,7 +12,7 @@ export function CtaSection() {
             <div className="absolute inset-0 bg-primary/5 -z-10" />
 
             <div className="container px-4 md:px-6 mx-auto text-center">
-                <motion.div
+                <MotionSafe
                     initial={{ opacity: 0, scale: 0.95 }}
                     whileInView={{ opacity: 1, scale: 1 }}
                     viewport={{ once: true }}
@@ -39,7 +39,7 @@ export function CtaSection() {
                             </Button>
                         </Link>
                     </div>
-                </motion.div>
+                </MotionSafe>
             </div>
         </section>
     );

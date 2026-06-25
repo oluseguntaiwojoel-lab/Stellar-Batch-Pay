@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { MotionSafe } from "@/components/motion-safe";
 import { Zap, ShieldCheck, Eye, GitMerge } from "lucide-react";
 
 const pillars = [
@@ -47,7 +47,7 @@ export function MissionSection() {
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[300px] bg-[#00D98B08] blur-[120px] rounded-full pointer-events-none -z-10" />
 
         {/* Badge */}
-        <motion.div
+        <MotionSafe
           initial={{ opacity: 0, scale: 0.9 }}
           whileInView={{ opacity: 1, scale: 1 }}
           viewport={{ once: true }}
@@ -57,10 +57,10 @@ export function MissionSection() {
           <span className="inline-flex items-center px-4 py-1.5 rounded-full border border-[#00D98B40] bg-[#00D98B10] text-[#00D98B] text-sm font-medium tracking-wide">
             Our Mission
           </span>
-        </motion.div>
+        </MotionSafe>
 
         {/* Heading */}
-        <motion.h2
+        <MotionSafe as="h2"
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
@@ -68,10 +68,10 @@ export function MissionSection() {
           className="text-3xl md:text-5xl font-bold tracking-tight text-white mb-6 max-w-3xl"
         >
           Empowering Financial Operations in Web3
-        </motion.h2>
+        </MotionSafe>
 
         {/* Subtext */}
-        <motion.p
+        <MotionSafe as="p"
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
@@ -81,10 +81,10 @@ export function MissionSection() {
           We&apos;re building infrastructure that makes blockchain payments as
           simple and reliable as traditional financial systems, enabling
           businesses to operate efficiently in the decentralized economy.
-        </motion.p>
+        </MotionSafe>
 
         {/* Pillar Cards */}
-        <motion.div
+        <MotionSafe
           variants={container}
           initial="hidden"
           whileInView="show"
@@ -92,7 +92,7 @@ export function MissionSection() {
           className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 w-full max-w-5xl"
         >
           {pillars.map((pillar) => (
-            <motion.div
+            <MotionSafe
               key={pillar.title}
               variants={item}
               whileHover={{ y: -6, transition: { duration: 0.2 } }}
@@ -108,9 +108,9 @@ export function MissionSection() {
               <p className="text-sm text-[#8B92B0] leading-relaxed">
                 {pillar.description}
               </p>
-            </motion.div>
+            </MotionSafe>
           ))}
-        </motion.div>
+        </MotionSafe>
       </div>
     </section>
   );

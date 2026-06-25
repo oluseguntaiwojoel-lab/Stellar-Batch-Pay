@@ -4,16 +4,29 @@
  * Returns paginated batch job history from the durable SQLite store.
  *
  * Query params:
- *   page    – 1-based page number (default 1)
- *   limit   – rows per page (default 20, max 100)
- *   status  – filter by job status (queued | processing | completed | failed)
- *   network – filter by network (testnet | mainnet)
+ *   page      – 1-based page number (default 1)
+ *   limit     – rows per page (default 20, max 100)
+ *   status    – filter by job status (queued | processing | completed | failed)
+ *   network   – filter by network (testnet | mainnet)
+ *   search    – substring match on jobId, payments JSON, or result JSON
+ *   from      – ISO timestamp; include jobs with createdAt >= from
+ *   to        – ISO timestamp; include jobs with createdAt <= to
+ *   sort      – column to sort by: createdAt (default), updatedAt, status
+ *   order     – sort direction: desc (default) or asc
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { StrKey } from "stellar-sdk";
 import { getAllJobs, countJobs } from "@/lib/job-store";
 import { safeJsonResponse } from "@/lib/safe-json";
 import type { JobStatus } from "@/lib/stellar/types";
+
+function parseIsoTimestamp(value: string | null): string | undefined {
+  if (!value) return undefined;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return undefined;
+  return parsed.toISOString();
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
@@ -24,15 +37,31 @@ export async function GET(request: NextRequest) {
 
   const rawStatus  = searchParams.get("status");
   const rawNetwork = searchParams.get("network");
+  const publicKey  = searchParams.get("publicKey");
+  const search     = searchParams.get("search")?.trim() || undefined;
+  const from       = parseIsoTimestamp(searchParams.get("from"));
+  const to         = parseIsoTimestamp(searchParams.get("to"));
+  const sort       = searchParams.get("sort") as "createdAt" | "updatedAt" | "status" | null;
+  const order      = searchParams.get("order") as "asc" | "desc" | null;
+
+  if (!publicKey || !StrKey.isValidEd25519PublicKey(publicKey)) {
+    return NextResponse.json(
+      { error: "A valid publicKey query parameter is required" },
+      { status: 400 },
+    );
+  }
 
   const validStatuses: JobStatus[] = ["queued", "processing", "completed", "failed"];
   const status  = validStatuses.includes(rawStatus as JobStatus) ? (rawStatus as JobStatus) : undefined;
-  const network = rawNetwork === "testnet" || rawNetwork === "mainnet" ? rawNetwork : undefined;
+  const network: "testnet" | "mainnet" | undefined =
+    rawNetwork === "testnet" || rawNetwork === "mainnet" ? rawNetwork : undefined;
 
   try {
+    const filters = { status, network, publicKey, search, from, to, sort: sort ?? undefined, order: order ?? undefined };
+
     const [jobs, total] = [
-      getAllJobs({ limit, offset, status, network }),
-      countJobs({ status, network }),
+      getAllJobs({ limit, offset, ...filters }),
+      countJobs(filters),
     ];
 
     // Strip the full payments array from the list response to keep payloads small.

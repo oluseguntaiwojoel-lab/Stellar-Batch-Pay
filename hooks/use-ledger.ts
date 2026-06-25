@@ -1,7 +1,11 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useToast } from "./use-toast";
+
+type LedgerTransport = {
+  close: () => Promise<void> | void;
+};
 
 export interface LedgerState {
   isConnected: boolean;
@@ -13,6 +17,8 @@ export interface LedgerState {
 
 export function useLedger() {
   const { toast } = useToast();
+  const transportRef = useRef<LedgerTransport | null>(null);
+  const signQueueRef = useRef<Promise<void>>(Promise.resolve());
   const [state, setState] = useState<LedgerState>({
     isConnected: false,
     isConnecting: false,
@@ -21,21 +27,36 @@ export function useLedger() {
     deviceInfo: null,
   });
 
+  const closeTransport = useCallback(async () => {
+    const transport = transportRef.current;
+    transportRef.current = null;
+
+    if (transport) {
+      await transport.close();
+    }
+  }, []);
+
+  const getTransport = useCallback(async () => {
+    if (transportRef.current) {
+      return transportRef.current;
+    }
+
+    const { default: TransportWebUSB } = await import("@ledgerhq/hw-transport-webusb");
+    const transport = await TransportWebUSB.create();
+    transportRef.current = transport;
+    return transport;
+  }, []);
+
   const connect = useCallback(async () => {
     setState((prev) => ({ ...prev, isConnecting: true, error: null }));
 
     try {
-      // Dynamically import Ledger libraries to avoid SSR issues
-      const { default: TransportWebUSB } = await import("@ledgerhq/hw-transport-webusb").catch(() => {
-        throw new Error("WebUSB transport not available");
-      });
-
-      const { default: StellarApp } = await import("@ledgerhq/hw-app-str").catch(() => {
-        throw new Error("Stellar Ledger app not available");
-      });
+      const { default: TransportWebUSB } = await import("@ledgerhq/hw-transport-webusb");
+      const { default: StellarApp } = await import("@ledgerhq/hw-app-str");
 
       const transport = await TransportWebUSB.create();
-      const stellar = new StellarApp(transport);
+      transportRef.current = transport;
+      const stellar = new StellarApp(transport) as any;
 
       // Get app info to verify Stellar app is open
       const appInfo = await stellar.getAppInfo();
@@ -61,6 +82,10 @@ export function useLedger() {
 
       return result.publicKey;
     } catch (error) {
+      await closeTransport().catch((closeError) => {
+        console.warn("Failed to close Ledger transport after connection error:", closeError);
+      });
+
       let errorMessage = "Failed to connect to Ledger";
 
       if (error instanceof Error) {
@@ -92,48 +117,70 @@ export function useLedger() {
 
       return null;
     }
-  }, [toast]);
+  }, [closeTransport, getTransport, toast]);
+
+  const runQueuedSign = useCallback(<T,>(task: () => Promise<T>): Promise<T> => {
+    const run = signQueueRef.current.then(task, task);
+    signQueueRef.current = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }, []);
 
   const signTransaction = useCallback(async (xdr: string): Promise<string> => {
     if (!state.isConnected) {
       throw new Error("Ledger not connected");
     }
 
-    try {
-      const { default: TransportWebUSB } = await import("@ledgerhq/hw-transport-webusb");
-      const { default: StellarApp } = await import("@ledgerhq/hw-app-str");
+    return runQueuedSign(async () => {
+      try {
+        const { default: TransportWebUSB } = await import("@ledgerhq/hw-transport-webusb");
+        const { default: StellarApp } = await import("@ledgerhq/hw-app-str");
 
-      const transport = await TransportWebUSB.create();
-      const stellar = new StellarApp(transport);
+        const transport = await TransportWebUSB.create();
+        const stellar = new StellarApp(transport) as any;
 
-      // Sign the transaction using Ledger
-      const result = await stellar.signTransaction("44'/148'/0'", xdr);
+        // Sign the transaction using Ledger. Chrome, Edge, and Opera are the
+        // supported WebUSB browsers for Ledger signing.
+        const result = await stellar.signTransaction("44'/148'/0'", xdr);
 
-      return result.signedTxXdr;
-    } catch (error) {
-      let errorMessage = "Failed to sign transaction with Ledger";
+        await closeTransport();
 
-      if (error instanceof Error) {
-        if (error.message.includes("Transaction approval request")) {
-          errorMessage = "Transaction was rejected on Ledger device";
-        } else if (error.message.includes("locked")) {
-          errorMessage = "Device locked. Please unlock your Ledger and try again.";
-        } else {
-          errorMessage = error.message;
+        return result.signedTxXdr;
+      } catch (error) {
+        await closeTransport().catch((closeError) => {
+          console.warn("Failed to close Ledger transport after signing error:", closeError);
+        });
+
+        let errorMessage = "Failed to sign transaction with Ledger";
+
+        if (error instanceof Error) {
+          if (error.message.includes("Transaction approval request")) {
+            errorMessage = "Transaction was rejected on Ledger device";
+          } else if (error.message.includes("locked")) {
+            errorMessage = "Device locked. Please unlock your Ledger and try again.";
+          } else {
+            errorMessage = error.message;
+          }
         }
+
+        toast({
+          title: "Ledger Signing Failed",
+          description: errorMessage,
+          variant: "destructive",
+        });
+
+        throw new Error(errorMessage);
       }
+    });
+  }, [closeTransport, getTransport, runQueuedSign, state.isConnected, toast]);
 
-      toast({
-        title: "Ledger Signing Failed",
-        description: errorMessage,
-        variant: "destructive",
-      });
+  const disconnect = useCallback(async () => {
+    await closeTransport().catch((error) => {
+      console.warn("Failed to close Ledger transport on disconnect:", error);
+    });
 
-      throw new Error(errorMessage);
-    }
-  }, [state.isConnected, toast]);
-
-  const disconnect = useCallback(() => {
     setState({
       isConnected: false,
       isConnecting: false,
@@ -141,9 +188,17 @@ export function useLedger() {
       error: null,
       deviceInfo: null,
     });
-  }, []);
+  }, [closeTransport]);
 
-  // Check if WebUSB is available
+  useEffect(() => {
+    return () => {
+      void closeTransport().catch((error) => {
+        console.warn("Failed to close Ledger transport on unmount:", error);
+      });
+    };
+  }, [closeTransport]);
+
+  // Check if WebUSB is available. Ledger WebUSB signing is supported in Chromium browsers.
   const isWebUSBSupported = typeof navigator !== "undefined" && "usb" in navigator;
 
   return {

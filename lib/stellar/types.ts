@@ -4,13 +4,16 @@
 
 export type JobStatus = "queued" | "processing" | "completed" | "failed";
 
+export type Network = "testnet" | "mainnet" | "futurenet";
+
 export interface JobState {
   jobId: string;
+  publicKey: string | null;
   status: JobStatus;
   totalBatches: number;
   completedBatches: number;
   payments: PaymentInstruction[];
-  network: "testnet" | "mainnet";
+  network: Network;
   // #300: Support for pre-signed transactions (client-side signing)
   signedTransactions?: string[];
   result?: BatchResult;
@@ -19,7 +22,7 @@ export interface JobState {
   updatedAt: string;
 }
 
-export type MemoType = 'text' | 'id' | 'none';
+export type MemoType = "text" | "id" | "none";
 
 export interface PaymentInstruction {
   address: string;
@@ -27,6 +30,7 @@ export interface PaymentInstruction {
   asset: string; // 'XLM' for native or 'CODE:ISSUER' for issued assets
   memo?: string;
   memoType?: MemoType; // defaults to 'text' when memo is provided
+  rowIndex?: number; // #397: original row index from upload, used for retry matching
 }
 
 export interface PaymentValidationRow {
@@ -60,6 +64,7 @@ export interface PaymentResult {
   status: "success" | "failed";
   transactionHash?: string;
   error?: string;
+  rowIndex?: number; // #397: original row index, persisted for retry matching
 }
 
 export interface BatchResult {
@@ -67,7 +72,7 @@ export interface BatchResult {
   totalRecipients: number;
   totalAmount: string;
   totalTransactions: number;
-  network: "testnet" | "mainnet";
+  network: Network;
   timestamp: string;
   submittedAt?: string;
   results: PaymentResult[];
@@ -79,23 +84,33 @@ export interface BatchResult {
 
 export interface BatchConfig {
   maxOperationsPerTransaction: number;
-  network: "testnet" | "mainnet";
+  network: Network;
   secretKey: string;
 }
 
 /** Config for building unsigned transactions (wallet-signing flow) */
 export interface BuildBatchConfig {
   maxOperationsPerTransaction: number;
-  network: "testnet" | "mainnet";
+  network: Network;
   publicKey: string;
+}
+
+export interface BatchMetaEntry {
+  ops: number;
+  estimatedBytes: number;
+  /** Explicit byte size alias for clarity in API responses (#612). Same as estimatedBytes. */
+  byteSize: number;
 }
 
 /** Result from the batch-build endpoint (unsigned XDRs) */
 export interface BuildBatchResult {
   xdrs: string[];
   batchCount: number;
-  network: "testnet" | "mainnet";
+  batchMeta?: BatchMetaEntry[];
+  network: Network;
   publicKey: string;
+  /** The Stellar network max transaction size constant (100KB) for client-side progress bars (#612). */
+  maxTransactionBytes?: number;
 }
 
 /** Vesting data structure matching the smart contract */
@@ -115,3 +130,27 @@ export interface VestingData {
 }
 
 export type TTLStatus = "healthy" | "warning" | "expired";
+
+// #335: Balance validation types referenced by validator.ts
+export interface HorizonBalance {
+  balance: string;
+  asset_type: "native" | "credit_alphanum4" | "credit_alphanum12";
+  asset_code?: string;
+  asset_issuer?: string;
+}
+
+export interface BalancesMap {
+  [assetKey: string]: number;
+}
+
+export interface BalanceValidationResult {
+  all_sufficient: boolean;
+  checks: Array<{
+    asset_key: string;
+    required: number;
+    available: number;
+    sufficient: boolean;
+    xlm_reserved?: number;
+    xlm_available_after_reserve?: number;
+  }>;
+}

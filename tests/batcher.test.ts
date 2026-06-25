@@ -8,8 +8,8 @@ import {
   createBatches,
   estimateBatchTransactionSize,
   getBatchSummary,
-  parseAsset,
 } from '../lib/stellar/batcher';
+import { parseAsset } from '../lib/stellar/utils';
 
 const firstAddress = Keypair.random().publicKey();
 const secondAddress = Keypair.random().publicKey();
@@ -100,20 +100,19 @@ describe('Batch Creation', () => {
 describe('Asset Parsing', () => {
   test('parses native XLM', () => {
     const asset = parseAsset('XLM');
-    expect(asset.code).toBe('XLM');
-    expect(asset.issuer).toBeNull();
+    expect(asset.isNative()).toBe(true);
   });
 
   test('parses issued asset', () => {
     const asset = parseAsset(`USDC:${issuerAddress}`);
-    expect(asset.code).toBe('USDC');
-    expect(asset.issuer).toBe(issuerAddress);
+    expect(asset.getCode()).toBe('USDC');
+    expect(asset.getIssuer()).toBe(issuerAddress);
   });
 
   test('parses asset with long code', () => {
     const asset = parseAsset(`LONGCODE123:${issuerAddress}`);
-    expect(asset.code).toBe('LONGCODE123');
-    expect(asset.issuer).toBe(issuerAddress);
+    expect(asset.getCode()).toBe('LONGCODE123');
+    expect(asset.getIssuer()).toBe(issuerAddress);
   });
 });
 

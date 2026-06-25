@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { MotionSafe } from "@/components/motion-safe";
 import { Check, Star } from "lucide-react";
 
 interface PlanFeature {
@@ -97,7 +97,7 @@ function PricingCard({ plan, index }: { plan: PricingPlan; index: number }) {
   const isRecommended = plan.recommended;
 
   return (
-    <motion.div
+    <MotionSafe
       initial={{ opacity: 0, y: 30 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true }}
@@ -157,7 +157,7 @@ function PricingCard({ plan, index }: { plan: PricingPlan; index: number }) {
       >
         {plan.cta}
       </button>
-    </motion.div>
+    </MotionSafe>
   );
 }
 
@@ -167,7 +167,7 @@ export function PricingPlans() {
       <div className="max-w-[1200px] mx-auto px-6 sm:px-8 md:px-12">
         {/* Section header */}
         <div className="text-center mb-14">
-          <motion.h2
+          <MotionSafe as="h2"
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
@@ -175,8 +175,8 @@ export function PricingPlans() {
             className="text-3xl sm:text-4xl md:text-5xl font-bold text-white tracking-tight mb-4"
           >
             Choose Your <span className="text-[#00D98B]">Plan</span>
-          </motion.h2>
-          <motion.p
+          </MotionSafe>
+          <MotionSafe as="p"
             initial={{ opacity: 0, y: 15 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
@@ -184,7 +184,7 @@ export function PricingPlans() {
             className="text-[#8B92B0] text-base sm:text-lg max-w-2xl mx-auto leading-relaxed"
           >
             Pick the plan that fits your needs. Upgrade or downgrade anytime.
-          </motion.p>
+          </MotionSafe>
         </div>
 
         {/* Plans grid */}

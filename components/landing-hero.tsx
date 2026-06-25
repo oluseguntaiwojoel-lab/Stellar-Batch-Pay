@@ -3,14 +3,14 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Zap, Shield, Layers } from "lucide-react";
-import { motion } from "framer-motion";
+import { MotionSafe } from "@/components/motion-safe";
 
 export function LandingHero() {
   return (
     <section className="relative overflow-hidden pt-20 pb-32 md:pt-32 md:pb-48">
       <div className="container px-4 md:px-6 mx-auto relative z-10">
         <div className="flex flex-col items-center text-center space-y-8">
-          <motion.div
+          <MotionSafe
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
@@ -18,9 +18,9 @@ export function LandingHero() {
           >
             <span className="flex h-2 w-2 rounded-full bg-primary mr-2"></span>
             Stellar Network Integration
-          </motion.div>
+          </MotionSafe>
 
-          <motion.h1
+          <MotionSafe as="h1"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.1 }}
@@ -28,9 +28,9 @@ export function LandingHero() {
           >
             Batch Payments made <br className="hidden md:block" />
             <span className="text-primary">Simple & Secure</span>
-          </motion.h1>
+          </MotionSafe>
 
-          <motion.p
+          <MotionSafe as="p"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.2 }}
@@ -38,9 +38,9 @@ export function LandingHero() {
           >
             Send thousands of payments in seconds with the power of the Stellar network.
             Non-custodial, low fees, and instant settlement.
-          </motion.p>
+          </MotionSafe>
 
-          <motion.div
+          <MotionSafe
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.3 }}
@@ -57,9 +57,9 @@ export function LandingHero() {
                 Learn about Stellar
               </Button>
             </Link>
-          </motion.div>
+          </MotionSafe>
 
-          <motion.div
+          <MotionSafe
             initial={{ opacity: 0, y: 40 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, delay: 0.4 }}
@@ -80,7 +80,7 @@ export function LandingHero() {
               <h3 className="font-semibold text-lg">Batch Processing</h3>
               <p className="text-sm text-muted-foreground">Group up to 100 payments per transaction to save fees.</p>
             </div>
-          </motion.div>
+          </MotionSafe>
         </div>
       </div>
 

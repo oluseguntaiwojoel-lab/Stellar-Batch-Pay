@@ -1,6 +1,6 @@
 // scripts/keeper.ts
 import {
-  SorobanRpc,
+  rpc as SorobanRpc,
   Networks,
   Keypair,
   TransactionBuilder,
@@ -8,47 +8,38 @@ import {
   Contract,
   Address,
   nativeToScVal,
-  xdr,
-} from 'stellar-sdk';
-import { createSecretsProvider } from '../lib/secrets/index';
+} from "stellar-sdk";
+import { createSecretsProvider } from "../lib/secrets/index";
 import {
-  DEFAULT_BUMP_THRESHOLD_DAYS,
-  daysToLedgers,
-  ledgersToDays,
-  prioritizeRecipients,
-  readPositiveIntEnv,
-  type TtlSnapshot,
-} from '../lib/keeper/threshold';
+  decodeTopicValue,
+  parseVestingEventRecipient,
+} from "../lib/stellar/vesting-events";
 
 /**
  * CONFIGURATION
  */
-const RPC_URL = process.env.SOROBAN_RPC_URL || 'https://soroban-testnet.stellar.org';
+const RPC_URL =
+  process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
 const NETWORK_PASSPHRASE = process.env.NETWORK_PASSPHRASE || Networks.TESTNET;
 const CONTRACT_ID = process.env.CONTRACT_ID;
 const U32_MAX = 2 ** 32 - 1;
-const MAINTENANCE_START_INDEX = readU32Env('MAINTENANCE_START_INDEX', 0);
-const MAINTENANCE_LIMIT = readU32Env('MAINTENANCE_LIMIT', 10);
-// #332: BUMP_THRESHOLD_DAYS is the off-chain pre-flight that mirrors the
-// contract's BUMP_THRESHOLD (7 * DAY_IN_LEDGERS). Recipients whose TTL is
-// still beyond this window are skipped so we don't pay fees for no-op bumps.
-const BUMP_THRESHOLD_DAYS = readPositiveIntEnv(
-  process.env.BUMP_THRESHOLD_DAYS,
-  DEFAULT_BUMP_THRESHOLD_DAYS,
-  'BUMP_THRESHOLD_DAYS',
-);
-const BUMP_THRESHOLD_LEDGERS = daysToLedgers(BUMP_THRESHOLD_DAYS);
+const MAINTENANCE_LIMIT = readU32Env("MAINTENANCE_LIMIT", 10);
+const BUMP_THRESHOLD_DAYS = 7;
 const ALERT_WEBHOOK_URL = process.env.ALERT_WEBHOOK_URL;
-const LOW_BALANCE_THRESHOLD = Number(process.env.LOW_BALANCE_THRESHOLD || '50'); // XLM
+const LOW_BALANCE_THRESHOLD = Number(process.env.LOW_BALANCE_THRESHOLD || "50"); // XLM
+
+// State file path for persisting per-recipient pagination index across runs (#586).
+const STATE_FILE_PATH =
+  process.env.KEEPER_STATE_PATH || "./data/keeper-state.json";
 
 if (!CONTRACT_ID) {
-  console.error('MISSING CONTRACT_ID in environment');
+  console.error("MISSING CONTRACT_ID in environment");
   process.exit(1);
 }
 
 function readU32Env(name: string, fallback: number): number {
   const rawValue = process.env[name];
-  if (rawValue === undefined || rawValue === '') {
+  if (rawValue === undefined || rawValue === "") {
     return fallback;
   }
 
@@ -60,52 +51,86 @@ function readU32Env(name: string, fallback: number): number {
   return value;
 }
 
+// ── Per-recipient pagination state (#586) ─────────────────────────────────
+
+interface KeeperState {
+  nextMaintenanceIndex: Record<string, number>;
+}
+
+async function loadState(): Promise<KeeperState> {
+  try {
+    const { readFile } = await import("node:fs/promises");
+    const raw = await readFile(STATE_FILE_PATH, "utf-8");
+    return JSON.parse(raw) as KeeperState;
+  } catch {
+    return { nextMaintenanceIndex: {} };
+  }
+}
+
+async function saveState(state: KeeperState): Promise<void> {
+  const { writeFile, mkdir } = await import("node:fs/promises");
+  const { dirname } = await import("node:path");
+  await mkdir(dirname(STATE_FILE_PATH), { recursive: true });
+  await writeFile(STATE_FILE_PATH, JSON.stringify(state, null, 2), "utf-8");
+}
+
+// ── Alerts & balance ───────────────────────────────────────────────────────
+
 async function sendAlert(message: string) {
   console.log(`[ALERT] ${message}`);
   if (!ALERT_WEBHOOK_URL) return;
 
   try {
     const response = await fetch(ALERT_WEBHOOK_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text: `🚨 *Keeper Bot Alert*: ${message}` }),
     });
     if (!response.ok) {
-      console.error('Failed to send alert to webhook:', response.statusText);
+      console.error("Failed to send alert to webhook:", response.statusText);
     }
   } catch (error) {
-    console.error('Error sending alert:', error);
+    console.error("Error sending alert:", error);
   }
 }
 
 async function checkBalance(server: SorobanRpc.Server, publicKey: string) {
   try {
     const account = await server.getAccount(publicKey);
-    // native balance is usually the first element in balances array
-    const nativeBalance = account.balances.find(b => b.asset_type === 'native');
-    const balance = Number(nativeBalance?.balance || '0');
+    // SorobanRpc Account type doesn't expose balances in its TS definitions;
+    // cast to any to access the underlying Horizon balance data.
+    const nativeBalance = (account as any).balances?.find(
+      (b: any) => b.asset_type === "native",
+    );
+    const balance = Number(nativeBalance?.balance || "0");
 
     if (balance < LOW_BALANCE_THRESHOLD) {
-      await sendAlert(`Low balance warning! Sponsor wallet ${publicKey} has only ${balance} XLM remaining.`);
+      await sendAlert(
+        `Low balance warning! Sponsor wallet ${publicKey} has only ${balance} XLM remaining.`,
+      );
     }
   } catch (error) {
-    console.error('Failed to check balance:', error);
+    console.error("Failed to check balance:", error);
   }
 }
+
+// ── Main loop ──────────────────────────────────────────────────────────────
 
 async function main() {
   // Fetch the keeper secret from the configured backend (#257).
   // Set SECRET_BACKEND=aws|github|env (default: env with a warning).
   const secrets = await createSecretsProvider();
-  const keeperSecret = await secrets.fetchSecret('KEEPER_SECRET');
+  const keeperSecret = await secrets.fetchSecret("KEEPER_SECRET");
   const keeperKeypair = Keypair.fromSecret(keeperSecret);
   const server = new SorobanRpc.Server(RPC_URL);
   const contract = new Contract(CONTRACT_ID!);
 
-  console.log('Starting Keeper Bot...');
+  console.log("Starting Keeper Bot...");
   console.log(`Contract: ${CONTRACT_ID}`);
   console.log(`Keeper: ${keeperKeypair.publicKey()}`);
   console.log(`Bump threshold: ${BUMP_THRESHOLD_DAYS} day(s) (${BUMP_THRESHOLD_LEDGERS} ledgers)`);
+
+  const state = await loadState();
 
   try {
     // 1. Fetch active recipients from events (simplified: assume we have a list or indexer)
@@ -113,132 +138,91 @@ async function main() {
     // For this demonstration, we'll focus on the logic for a single recipient.
     const recipients = await fetchActiveRecipients();
 
-    // 2. Read each recipient's VestingCount TTL and prioritize those inside
-    //    the threshold window. Recipients with healthy TTL are skipped so we
-    //    don't pay fees for bumps the contract would treat as no-ops.
-    const snapshots = await readRecipientTtls(server, recipients);
-    const currentLedger = await getCurrentLedger(server);
-    const prioritized = prioritizeRecipients(snapshots, currentLedger, BUMP_THRESHOLD_LEDGERS);
-
-    if (prioritized.length === 0) {
-      console.log(
-        `No recipients within ${BUMP_THRESHOLD_DAYS}-day TTL window — skipping per-recipient maintenance.`,
-      );
-    } else {
-      console.log(
-        `Prioritizing ${prioritized.length}/${snapshots.length} recipients within TTL window.`,
-      );
-    }
-
-    for (const snapshot of prioritized) {
-      const remainingDays =
-        snapshot.liveUntilLedger === null
-          ? null
-          : ledgersToDays(snapshot.liveUntilLedger - currentLedger);
-      console.log(
-        `[maintenance] ${snapshot.recipient} remaining=${
-          remainingDays === null ? 'unknown' : remainingDays.toFixed(2) + 'd'
-        }`,
-      );
-      await maintainRecipient(
-        snapshot.recipient,
+    for (const recipient of recipients) {
+      await maintainRecipientPaginated(
+        recipient,
         server,
         contract,
         keeperKeypair,
-        MAINTENANCE_START_INDEX,
-        MAINTENANCE_LIMIT,
+        state,
       );
     }
 
-    // 3. Maintain contract instance
+    await saveState(state);
+
+    // 2. Maintain contract instance
     await maintainInstance(server, contract, keeperKeypair);
 
     // 4. Proactive balance check
     await checkBalance(server, keeperKeypair.publicKey());
 
-    console.log('Keeper Bot finished successfully.');
-
+    console.log("Keeper Bot finished successfully.");
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
-    console.error('Keeper execution failed:', errorMsg);
+    console.error("Keeper execution failed:", errorMsg);
     await sendAlert(`Critical failure in Keeper Bot: ${errorMsg}`);
   }
 }
 
-/**
- * #332: Build the Soroban ledger key for `DataKey::VestingCount(recipient)`.
- *
- * Soroban contracttype enums serialize to a Vec whose first element is the
- * variant name as a Symbol; subsequent elements are the variant fields.
- * The keeper only needs to read the VestingCount entry per recipient — it's
- * the cheapest single key whose TTL tracks the recipient's overall freshness.
- */
-function buildVestingCountLedgerKey(contractId: string, recipient: string): xdr.LedgerKey {
-  const key = xdr.ScVal.scvVec([
-    xdr.ScVal.scvSymbol('VestingCount'),
-    new Address(recipient).toScVal(),
-  ]);
-  return xdr.LedgerKey.contractData(
-    new xdr.LedgerKeyContractData({
-      contract: new Address(contractId).toScAddress(),
-      key,
-      durability: xdr.ContractDataDurability.persistent(),
-    }),
-  );
-}
+// ── Per-recipient paginated maintenance (#586) ─────────────────────────────
+//
+// The old implementation called maintenance() once per recipient using the
+// global MAINTENANCE_START_INDEX and MAINTENANCE_LIMIT env vars, which means
+// recipients with more than MAINTENANCE_LIMIT schedules would never have their
+// later indices covered.
+//
+// This replacement loops until a simulated maintenance() call reports nothing
+// to bump (simulation error = no work), then resets the cursor back to 0 so
+// the next run starts a fresh full sweep. The cursor is persisted in
+// KEEPER_STATE_PATH between runs so partial progress survives restarts.
+//
+// Each keeper run advances one window per recipient. N runs are therefore
+// needed to cover a recipient with N * MAINTENANCE_LIMIT schedule entries.
+// DEPLOYMENT.md documents this N and how to tune MAINTENANCE_LIMIT.
 
-async function getCurrentLedger(server: SorobanRpc.Server): Promise<number> {
-  const latest = await server.getLatestLedger();
-  return latest.sequence;
-}
-
-/**
- * Reads the VestingCount TTL for each recipient. Missing entries return a
- * null liveUntilLedger so the caller can treat them as urgent.
- */
-async function readRecipientTtls(
+async function maintainRecipientPaginated(
+  recipient: string,
   server: SorobanRpc.Server,
-  recipients: string[],
-): Promise<TtlSnapshot[]> {
-  if (recipients.length === 0) return [];
+  contract: Contract,
+  keeperKeypair: Keypair,
+  state: KeeperState,
+): Promise<void> {
+  const startIndex = state.nextMaintenanceIndex[recipient] ?? 0;
+  const limit = MAINTENANCE_LIMIT;
 
-  const keys = recipients.map((r) => buildVestingCountLedgerKey(CONTRACT_ID!, r));
+  console.log(
+    `Maintaining recipient: ${recipient} — window [${startIndex}, ${startIndex + limit})`,
+  );
 
-  try {
-    const result = await server.getLedgerEntries(...keys);
-    const liveUntilByRecipient = new Map<string, number>();
+  const bumped = await maintainRecipientWindow(
+    recipient,
+    server,
+    contract,
+    keeperKeypair,
+    startIndex,
+    limit,
+  );
 
-    for (const entry of result.entries ?? []) {
-      const liveUntil = (entry as { liveUntilLedgerSeq?: number }).liveUntilLedgerSeq;
-      if (typeof liveUntil !== 'number') continue;
-      const data = entry.val.contractData();
-      const keyVec = data.key().vec();
-      if (!keyVec || keyVec.length < 2) continue;
-      const addressScVal = keyVec[1];
-      const recipientAddr = Address.fromScVal(addressScVal).toString();
-      liveUntilByRecipient.set(recipientAddr, liveUntil);
-    }
-
-    return recipients.map<TtlSnapshot>((recipient) => ({
-      recipient,
-      liveUntilLedger: liveUntilByRecipient.has(recipient)
-        ? liveUntilByRecipient.get(recipient)!
-        : null,
-    }));
-  } catch (error) {
-    console.error('Failed to read recipient TTLs:', error);
-    // Fall back to treating every recipient as urgent so we don't silently
-    // skip required maintenance because of an RPC blip.
-    return recipients.map<TtlSnapshot>((recipient) => ({
-      recipient,
-      liveUntilLedger: null,
-    }));
+  if (bumped) {
+    // Advance cursor for next run.
+    state.nextMaintenanceIndex[recipient] = startIndex + limit;
+    console.log(
+      `  → bumped indices [${startIndex}, ${startIndex + limit}); ` +
+        `next run starts at ${startIndex + limit}`,
+    );
+  } else {
+    // Simulation reported no work — either all indices in this window are
+    // healthy or we've passed the end of this recipient's schedule list.
+    // Reset cursor so the next run starts a fresh sweep from index 0.
+    state.nextMaintenanceIndex[recipient] = 0;
+    console.log(
+      `  → no work in window [${startIndex}, ${startIndex + limit}); cursor reset to 0`,
+    );
   }
 }
 
 async function fetchActiveRecipients(): Promise<string[]> {
   const rpc = new SorobanRpc.Server(RPC_URL);
-  const contract = new Contract(CONTRACT_ID!);
   const recipients = new Set<string>();
 
   try {
@@ -261,33 +245,24 @@ async function fetchActiveRecipients(): Promise<string[]> {
       }
 
       for (const event of events.events) {
-        if (event.type === "contract" && Array.isArray(event.contract)) {
-          const topics = event.contract;
-          const eventNameTopic = topics[0];
+        if (event.type !== "contract") continue;
+        const topics: unknown[] = Array.isArray((event as any).topic)
+          ? (event as any).topic
+          : Array.isArray(event.contractId)
+            ? event.contractId
+            : [];
 
-          // Match vesting-related event names
-          if (eventNameTopic && typeof eventNameTopic === "object") {
-            const eventName = (eventNameTopic as any).sym || String(eventNameTopic);
-            if (
-              eventName.includes("vested") ||
-              eventName.includes("created") ||
-              eventName.includes("revoked")
-            ) {
-              // Extract recipient address from event data
-              const eventData = event.data;
-              if (Array.isArray(eventData) && eventData.length > 0) {
-                const recipientData = eventData[0];
-                if (recipientData && typeof recipientData === "object") {
-                  const recipientAddr = (recipientData as any).address ||
-                    (recipientData as any).recipientAddress ||
-                    String(recipientData);
-                  if (recipientAddr && recipientAddr.startsWith("G")) {
-                    recipients.add(recipientAddr);
-                  }
-                }
-              }
-            }
-          }
+        const eventName = decodeTopicValue(topics[0]);
+        if (!eventName) {
+          console.log(`Skipping event with undecodable name`);
+          continue;
+        }
+
+        const recipient = parseVestingEventRecipient(eventName, topics);
+        if (recipient) {
+          recipients.add(recipient);
+        } else {
+          console.log(`Skipping unknown event type: ${eventName}`);
         }
       }
 
@@ -296,7 +271,9 @@ async function fetchActiveRecipients(): Promise<string[]> {
     }
 
     const result = Array.from(recipients);
-    console.log(`Fetched ${result.length} active recipients from contract events`);
+    console.log(
+      `Fetched ${result.length} active recipients from contract events`,
+    );
     return result;
   } catch (error) {
     console.error("Failed to fetch active recipients:", error);
@@ -310,20 +287,20 @@ async function maintainInstance(
   contract: Contract,
   keeperKeypair: Keypair,
 ) {
-  console.log('Checking contract instance TTL...');
+  console.log("Checking contract instance TTL...");
   const sourceAccount = await server.getAccount(keeperKeypair.publicKey());
 
   const tx = new TransactionBuilder(
     new Account(sourceAccount.accountId(), sourceAccount.sequenceNumber()),
-    { fee: '100000', networkPassphrase: NETWORK_PASSPHRASE },
+    { fee: "100000", networkPassphrase: NETWORK_PASSPHRASE },
   )
-    .addOperation(contract.call('bump_instance_ttl'))
+    .addOperation(contract.call("bump_instance_ttl"))
     .setTimeout(300)
     .build();
 
   const sim = await server.simulateTransaction(tx);
   if (SorobanRpc.Api.isSimulationError(sim)) {
-    console.log('Instance TTL bump not needed or failed simulation.');
+    console.log("Instance TTL bump not needed or failed simulation.");
     return;
   }
 
@@ -334,42 +311,46 @@ async function maintainInstance(
   console.log(`Instance TTL bumped: ${result.hash}`);
 }
 
-async function maintainRecipient(
+// Returns true if the maintenance call went through (entries were bumped),
+// false if the simulation reported no work for this window.
+async function maintainRecipientWindow(
   recipient: string,
   server: SorobanRpc.Server,
   contract: Contract,
   keeperKeypair: Keypair,
   startIndex: number,
   limit: number,
-) {
-  console.log(`Checking TTL for recipient: ${recipient} (${startIndex}..${startIndex + limit})`);
-
+): Promise<boolean> {
   const sourceAccount = await server.getAccount(keeperKeypair.publicKey());
 
   const tx = new TransactionBuilder(
     new Account(sourceAccount.accountId(), sourceAccount.sequenceNumber()),
-    { fee: '100000', networkPassphrase: NETWORK_PASSPHRASE },
+    { fee: "100000", networkPassphrase: NETWORK_PASSPHRASE },
   )
-    .addOperation(contract.call(
-      'maintenance',
-      new Address(recipient).toScVal(),
-      nativeToScVal(startIndex, { type: 'u32' }),
-      nativeToScVal(limit, { type: 'u32' }),
-    ))
+    .addOperation(
+      contract.call(
+        "maintenance",
+        new Address(recipient).toScVal(),
+        nativeToScVal(startIndex, { type: "u32" }),
+        nativeToScVal(limit, { type: "u32" }),
+      ),
+    )
     .setTimeout(300)
     .build();
 
   const sim = await server.simulateTransaction(tx);
   if (SorobanRpc.Api.isSimulationError(sim)) {
-    console.log(`Maintenance for ${recipient} not needed or failed.`);
-    return;
+    return false;
   }
 
   const preparedTx = SorobanRpc.assembleTransaction(tx, sim).build();
   preparedTx.sign(keeperKeypair);
 
   const result = await server.sendTransaction(preparedTx);
-  console.log(`Maintenance completed for ${recipient} (${startIndex}..${startIndex + limit}): ${result.hash}`);
+  console.log(
+    `  ✓ maintenance tx submitted for ${recipient} [${startIndex}, ${startIndex + limit}): ${result.hash}`,
+  );
+  return true;
 }
 
 main();

@@ -1,5 +1,6 @@
 import type { BatchResult } from "@/lib/stellar/types";
 import { escapeHtml } from "@/lib/utils";
+import { sumStellarAmounts, formatStellarAmount } from "@/lib/stellar/utils";
 
 interface ReceiptData {
   batchResult: BatchResult;
@@ -14,9 +15,9 @@ export function generateReceiptHtml(batchResult: BatchResult): string {
   const successfulPayments = batchResult.results.filter(r => r.status === "success");
   const failedPayments = batchResult.results.filter(r => r.status === "failed");
 
-  const totalAmount = batchResult.results.reduce((sum, r) => {
-    return sum + parseFloat(r.amount || "0");
-  }, 0);
+  const totalAmount = formatStellarAmount(
+    sumStellarAmounts(batchResult.results.map(r => r.amount || "0"))
+  );
 
   return `
 <!DOCTYPE html>
@@ -73,7 +74,7 @@ export function generateReceiptHtml(batchResult: BatchResult): string {
           <div class="label">Failed</div>
         </div>
         <div class="summary-box">
-          <div class="number">${totalAmount.toFixed(7)}</div>
+          <div class="number">${totalAmount}</div>
           <div class="label">Total Amount (XLM)</div>
         </div>
       </div>
@@ -165,9 +166,9 @@ export function generateReceiptHtml(batchResult: BatchResult): string {
 
 export function generateReceiptText(batchResult: BatchResult): string {
   const successfulPayments = batchResult.results.filter(r => r.status === "success");
-  const totalAmount = batchResult.results.reduce((sum, r) => {
-    return sum + parseFloat(r.amount || "0");
-  }, 0);
+  const totalAmount = formatStellarAmount(
+    sumStellarAmounts(batchResult.results.map(r => r.amount || "0"))
+  );
 
   let text = `Stellar BatchPay - Batch Payment Receipt\n`;
   text += `${"=".repeat(50)}\n\n`;
@@ -180,7 +181,7 @@ export function generateReceiptText(batchResult: BatchResult): string {
   text += `Total Recipients: ${batchResult.totalRecipients}\n`;
   text += `Successful: ${batchResult.summary.successful}\n`;
   text += `Failed: ${batchResult.summary.failed}\n`;
-  text += `Total Amount: ${totalAmount.toFixed(7)} XLM\n\n`;
+  text += `Total Amount: ${totalAmount} XLM\n\n`;
 
   text += `PAYMENT DETAILS\n`;
   text += `${"-".repeat(30)}\n`;

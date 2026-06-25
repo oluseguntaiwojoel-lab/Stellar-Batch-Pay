@@ -1,7 +1,8 @@
 'use client';
 
 import React from 'react';
-import { motion } from 'framer-motion';
+import Link from 'next/link';
+import { MotionSafe } from "@/components/motion-safe";
 import { Button } from '@/components/ui/button';
 import { Rocket, FileText, Shield, Clock, Users } from 'lucide-react';
 import { DashboardMockup } from './DashboardMockup';
@@ -16,7 +17,7 @@ export const Hero = () => {
                 {/* Content Left */}
                 <div className="space-y-10 relative z-10">
                     <div className="space-y-6">
-                        <motion.h1 
+                        <MotionSafe as="h1" 
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ duration: 0.6 }}
@@ -25,9 +26,9 @@ export const Hero = () => {
                             Send Hundreds of <br />
                             <span className="text-[#00D4AA] drop-shadow-[0_0_30px_rgba(0,212,170,0.3)]">Crypto Payments</span> <br />
                             in Seconds.
-                        </motion.h1>
+                        </MotionSafe>
 
-                        <motion.p 
+                        <MotionSafe as="p" 
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ duration: 0.6, delay: 0.2 }}
@@ -36,30 +37,34 @@ export const Hero = () => {
                             Upload a payment list, automate transactions, and distribute funds efficiently on the Stellar <br /> blockchain.
                             
                           
-                        </motion.p>
-                         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.4 }} className='text-[#9CA3AF] text-[18px] max-w-[452px] '>
+                        </MotionSafe>
+                         <MotionSafe initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.4 }} className='text-[#9CA3AF] text-[18px] max-w-[452px] '>
                              Reduce manual errors, lower transaction costs, and streamline bulk payouts.
-                           </motion.div>
+                           </MotionSafe>
                     </div>
 
-                    <motion.div 
+                    <MotionSafe 
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.6, delay: 0.4 }}
                         className="flex flex-wrap gap-5 pt-4"
                     >
-                        <Button className="bg-[#00D4AA] hover:bg-[#00B894] text-[#020B0D] font-bold px-8 py-7 rounded-2xl text-lg flex items-center gap-3 shadow-[0_10px_30px_rgba(0,212,170,0.2)] transition-all hover:scale-105 active:scale-95 group">
-                            <Rocket className="w-5 h-5  fill-black" />
-                            Start Batch Payment
+                        <Button asChild className="bg-[#00D4AA] hover:bg-[#00B894] text-[#020B0D] font-bold px-8 py-7 rounded-2xl text-lg flex items-center gap-3 shadow-[0_10px_30px_rgba(0,212,170,0.2)] transition-all hover:scale-105 active:scale-95 group">
+                            <Link href="/dashboard/new-batch">
+                                <Rocket className="w-5 h-5  fill-black" />
+                                Start Batch Payment
+                            </Link>
                         </Button>
-                        <Button variant="outline" className="border-[#4B5563] bg-[#00000000]/50 hover:bg-white/5 hover:text-[#00D4AA] text-white font-bold px-8 py-7 rounded-2xl text-lg flex items-center gap-3 backdrop-blur-sm transition-all hover:border-white/20 hover:scale-105 active:scale-95 group">
-                            <FileText className="w-5 h-5 " />
-                            View Documentation
+                        <Button asChild variant="outline" className="border-[#4B5563] bg-[#00000000]/50 hover:bg-white/5 hover:text-[#00D4AA] text-white font-bold px-8 py-7 rounded-2xl text-lg flex items-center gap-3 backdrop-blur-sm transition-all hover:border-white/20 hover:scale-105 active:scale-95 group">
+                            <Link href="/docs">
+                                <FileText className="w-5 h-5 " />
+                                View Documentation
+                            </Link>
                         </Button>
-                    </motion.div>
+                    </MotionSafe>
 
                     {/* Trust Badges */}
-                    <motion.div 
+                    <MotionSafe 
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         transition={{ duration: 1, delay: 0.8 }}
@@ -77,7 +82,7 @@ export const Hero = () => {
                             <Users className="w-4 h-4 text-[#00D4AA]" />
                             10K+ Users
                         </div>
-                    </motion.div>
+                    </MotionSafe>
                 </div>
 
                 {/* Content Right - Mockup */}

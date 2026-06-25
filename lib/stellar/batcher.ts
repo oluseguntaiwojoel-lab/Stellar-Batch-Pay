@@ -4,18 +4,19 @@
 
 import {
   Account,
-  Asset as StellarAsset,
   Memo,
   Networks,
   Operation,
   TransactionBuilder,
   Horizon,
   rpc as SorobanRpc,
-} from 'stellar-sdk';
-import Big from 'big.js';
+} from "stellar-sdk";
+import Big from "big.js";
 
-import { PaymentInstruction, Asset } from './types';
-import { getRecommendedFee } from './fee-service';
+import { PaymentInstruction } from "./types";
+import { getRecommendedFee } from "./fee-service";
+import { parseAsset } from "./utils";
+export { getBatchSummary } from "./summary";
 
 export interface Batch {
   transactionIndex: number;
@@ -24,7 +25,7 @@ export interface Batch {
 
 export interface CreateBatchesOptions {
   maxTransactionBytes?: number;
-  network?: 'testnet' | 'mainnet';
+  network?: "testnet" | "mainnet";
   server?: Horizon.Server;
   /** Provide a Soroban RPC server to enable simulation-based size estimation (#218) */
   sorobanServer?: SorobanRpc.Server;
@@ -35,8 +36,8 @@ export interface CreateBatchesOptions {
 export const STELLAR_TRANSACTION_SIZE_LIMIT_BYTES = 100_000;
 const DEFAULT_TRANSACTION_SIZE_HEADROOM_BYTES = 95_000;
 const SIZE_ESTIMATION_ACCOUNT = new Account(
-  'GANQYDFSSJMTNLITJNXUPRUIFDVZQK2P4HWSX5CAI4SPIYPXNNFOPZQE',
-  '1',
+  "GANQYDFSSJMTNLITJNXUPRUIFDVZQK2P4HWSX5CAI4SPIYPXNNFOPZQE",
+  "1",
 );
 
 /**
@@ -45,29 +46,29 @@ const SIZE_ESTIMATION_ACCOUNT = new Account(
  */
 export async function simulateBatchTransactionSize(
   payments: PaymentInstruction[],
-  network: 'testnet' | 'mainnet',
+  network: "testnet" | "mainnet",
   sorobanServer: SorobanRpc.Server,
   sourcePublicKey: string,
   fee?: number,
 ): Promise<number> {
-  const networkPassphrase = network === 'mainnet' ? Networks.PUBLIC : Networks.TESTNET;
+  const networkPassphrase =
+    network === "mainnet" ? Networks.PUBLIC : Networks.TESTNET;
   const feeToUse = fee ?? 100;
 
   try {
     const accountData = await sorobanServer.getAccount(sourcePublicKey);
-    const account = new Account(accountData.accountId(), accountData.sequenceNumber());
+    const account = new Account(
+      accountData.accountId(),
+      accountData.sequenceNumber(),
+    );
 
     let builder = new TransactionBuilder(account, {
       fee: String(feeToUse),
       networkPassphrase,
-    }).addMemo(Memo.text('batch-size-check'));
+    }).addMemo(Memo.text("batch-size-check"));
 
     for (const payment of payments) {
-      const asset = parseAsset(payment.asset);
-      const stellarAsset =
-        asset.issuer === null
-          ? StellarAsset.native()
-          : new StellarAsset(asset.code, asset.issuer);
+      const stellarAsset = parseAsset(payment.asset);
 
       builder = builder.addOperation(
         Operation.payment({
@@ -94,20 +95,20 @@ export async function simulateBatchTransactionSize(
 }
 
 function getTransactionByteLength(xdr: string | Buffer): number {
-  if (typeof xdr !== 'string') {
+  if (typeof xdr !== "string") {
     return xdr.length;
   }
 
-  return Buffer.from(xdr, 'base64').length;
+  return Buffer.from(xdr, "base64").length;
 }
 
 export function estimateBatchTransactionSize(
   payments: PaymentInstruction[],
-  network: 'testnet' | 'mainnet' = 'testnet',
+  network: "testnet" | "mainnet" = "testnet",
   fee?: number,
 ): number {
   const networkPassphrase =
-    network === 'mainnet' ? Networks.PUBLIC : Networks.TESTNET;
+    network === "mainnet" ? Networks.PUBLIC : Networks.TESTNET;
 
   // Use provided fee or default to 100 stroops (minimum fee)
   const feeToUse = fee !== undefined ? fee : 100;
@@ -115,14 +116,10 @@ export function estimateBatchTransactionSize(
   let builder = new TransactionBuilder(SIZE_ESTIMATION_ACCOUNT, {
     fee: String(feeToUse),
     networkPassphrase,
-  }).addMemo(Memo.text('batch-size-check'));
+  }).addMemo(Memo.text("batch-size-check"));
 
   for (const payment of payments) {
-    const asset = parseAsset(payment.asset);
-    const stellarAsset =
-      asset.issuer === null
-        ? StellarAsset.native()
-        : new StellarAsset(asset.code, asset.issuer);
+    const stellarAsset = parseAsset(payment.asset);
 
     builder = builder.addOperation(
       Operation.payment({
@@ -150,7 +147,7 @@ export async function createBatches(
   let transactionIndex = 0;
   const maxTransactionBytes =
     options.maxTransactionBytes ?? DEFAULT_TRANSACTION_SIZE_HEADROOM_BYTES;
-  const network = options.network ?? 'testnet';
+  const network = options.network ?? "testnet";
   const useSorobanSim = !!(options.sorobanServer && options.sourcePublicKey);
 
   // Fetch dynamic fee for size estimation
@@ -159,7 +156,10 @@ export async function createBatches(
     try {
       dynamicFee = await getRecommendedFee(options.server);
     } catch (error) {
-      console.warn('Failed to fetch dynamic fee for size estimation, using default:', error);
+      console.warn(
+        "Failed to fetch dynamic fee for size estimation, using default:",
+        error,
+      );
     }
   }
 
@@ -187,7 +187,10 @@ export async function createBatches(
     const exceedsSizeLimit =
       (await getBatchSize(candidateBatch)) > maxTransactionBytes;
 
-    if ((exceedsOperationLimit || exceedsSizeLimit) && currentBatch.length > 0) {
+    if (
+      (exceedsOperationLimit || exceedsSizeLimit) &&
+      currentBatch.length > 0
+    ) {
       batches.push({
         transactionIndex,
         payments: currentBatch,
@@ -215,54 +218,4 @@ export async function createBatches(
   }
 
   return batches;
-}
-
-/**
- * Parse asset string to code and issuer
- */
-export function parseAsset(assetString: string): Asset {
-  if (assetString === 'XLM') {
-    return {
-      code: 'XLM',
-      issuer: null,
-    };
-  }
-
-  const [code, issuer] = assetString.split(':');
-  return {
-    code,
-    issuer,
-  };
-}
-
-import { validatePaymentInstruction } from './validator';
-
-/**
- * Get summary statistics for a batch of payments
- */
-export function getBatchSummary(instructions: PaymentInstruction[]) {
-  let totalAmount = new Big('0');
-  let validCount = 0;
-  let invalidCount = 0;
-  const assetCount = new Map<string, number>();
-
-  for (const instruction of instructions) {
-    totalAmount = totalAmount.plus(instruction.amount);
-    assetCount.set(instruction.asset, (assetCount.get(instruction.asset) || 0) + 1);
-
-    const validation = validatePaymentInstruction(instruction);
-    if (validation.valid) {
-      validCount++;
-    } else {
-      invalidCount++;
-    }
-  }
-
-  return {
-    recipientCount: instructions.length,
-    validCount,
-    invalidCount,
-    totalAmount: totalAmount.toString(),
-    assetBreakdown: Object.fromEntries(assetCount),
-  };
 }

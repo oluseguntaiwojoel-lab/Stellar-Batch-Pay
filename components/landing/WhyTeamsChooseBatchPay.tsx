@@ -1,6 +1,6 @@
 'use client';
 
-import { motion } from 'framer-motion';
+import { MotionSafe } from "@/components/motion-safe";
 import { CheckCircle2 } from 'lucide-react';
 import Image from 'next/image';
 
@@ -55,7 +55,7 @@ export function WhyTeamsChooseBatchPay() {
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
                     {/* Left Column: Content */}
                     <div className="max-w-xl">
-                        <motion.div
+                        <MotionSafe
                             initial={{ opacity: 0, y: 20 }}
                             whileInView={{ opacity: 1, y: 0 }}
                             viewport={{ once: true }}
@@ -68,9 +68,9 @@ export function WhyTeamsChooseBatchPay() {
                             <p className="text-[#8B92B0] text-lg mb-10 leading-relaxed">
                                 Built by payment professionals who understand the challenges of scaling crypto operations.
                             </p>
-                        </motion.div>
+                        </MotionSafe>
 
-                        <motion.div
+                        <MotionSafe
                             variants={containerVariants}
                             initial="hidden"
                             whileInView="visible"
@@ -78,7 +78,7 @@ export function WhyTeamsChooseBatchPay() {
                             className="space-y-8"
                         >
                             {features.map((feature, index) => (
-                                <motion.div
+                                <MotionSafe
                                     key={index}
                                     variants={itemVariants}
                                     className="flex gap-5 group"
@@ -106,13 +106,13 @@ export function WhyTeamsChooseBatchPay() {
                                             {feature.description}
                                         </p>
                                     </div>
-                                </motion.div>
+                                </MotionSafe>
                             ))}
-                        </motion.div>
+                        </MotionSafe>
                     </div>
 
                     {/* Right Column: Image */}
-                    <motion.div
+                    <MotionSafe
                         initial={{ opacity: 0, scale: 0.95 }}
                         whileInView={{ opacity: 1, scale: 1 }}
                         viewport={{ once: true }}
@@ -127,7 +127,7 @@ export function WhyTeamsChooseBatchPay() {
                         />
                         {/* Gradient Overlay for integration */}
                         <div className="absolute inset-0 bg-gradient-to-t from-[#0A0E1A80] to-transparent pointer-events-none" />
-                    </motion.div>
+                    </MotionSafe>
                 </div>
             </div>
         </section>

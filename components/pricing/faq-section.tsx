@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { MotionSafe } from "@/components/motion-safe";
 import {
   Accordion,
   AccordionItem,
@@ -62,7 +62,7 @@ export function FaqSection() {
       <div className="max-w-[800px] mx-auto px-6 sm:px-8 md:px-12">
         {/* Section header */}
         <div className="text-center mb-12">
-          <motion.h2
+          <MotionSafe as="h2"
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
@@ -71,8 +71,8 @@ export function FaqSection() {
           >
             Frequently Asked{" "}
             <span className="text-[#00D98B]">Questions</span>
-          </motion.h2>
-          <motion.p
+          </MotionSafe>
+          <MotionSafe as="p"
             initial={{ opacity: 0, y: 15 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
@@ -80,11 +80,11 @@ export function FaqSection() {
             className="text-[#8B92B0] text-base sm:text-lg max-w-xl mx-auto leading-relaxed"
           >
             Everything you need to know about Stellar Batch Pay.
-          </motion.p>
+          </MotionSafe>
         </div>
 
         {/* Accordion */}
-        <motion.div
+        <MotionSafe
           initial={{ opacity: 0, y: 30 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
@@ -106,7 +106,7 @@ export function FaqSection() {
               </AccordionItem>
             ))}
           </Accordion>
-        </motion.div>
+        </MotionSafe>
       </div>
     </section>
   );

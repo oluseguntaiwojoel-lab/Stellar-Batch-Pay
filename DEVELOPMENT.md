@@ -11,7 +11,7 @@ The project follows a clean layered architecture with clear separation of concer
 ```
 ┌─────────────────────────────────────────────────────────┐
 │           UI Layer (Web & CLI)                          │
-│  (pages, components, cli/index.ts)                      │
+│  (pages, components, cli/index.mjs)                     │
 └─────────────────────────────────────────────────────────┘
                         ↓
 ┌─────────────────────────────────────────────────────────┐
@@ -59,6 +59,24 @@ The project follows a clean layered architecture with clear separation of concer
 - Manages sequence numbers and error handling
 - Returns structured results
 
+## Motion vocabulary
+
+Dashboard and marketing UI share `MotionSafe` (`components/motion-safe.tsx`),
+which disables Framer Motion when `prefers-reduced-motion` is set.
+
+Presets live in `lib/motion-tokens.ts`:
+
+| Preset | Use |
+|--------|-----|
+| `pageEnter` | Dashboard page shells (history, batch detail) |
+| `stepEnter` | New-batch wizard steps |
+| `fadeInUpMedium` | Metric cards and staggered grids |
+| `motionCssDuration` | Tailwind `transition-all` durations aligned with tokens |
+
+Prefer spreading a preset onto `MotionSafe` instead of ad hoc `animate-in`
+utilities or raw `motion.div` on data-heavy routes. Utilitarian tables can
+omit entrance animation entirely.
+
 ## Key Design Decisions
 
 ### 1. No ORM or Additional Abstraction
@@ -89,10 +107,14 @@ Secret keys come from environment variables, never from configuration files. Thi
 
 If you need special handling for a specific asset:
 
-1. Update `batcher.ts` parseAsset() function
+1. Update `parseAsset()` in `lib/stellar/utils.ts` — this is the **single shared parser** used by both `batcher.ts` and `server.ts`
 2. Add validation in `validator.ts`
 3. Update type definitions in `types.ts`
 4. Add tests in `tests/`
+
+> **Important — server-side signing:** `StellarService` in `server.ts` (used by `/api/batch-submit` with `STELLAR_SECRET_KEY`) builds payment operations by calling `parseAsset` from `lib/stellar/utils.ts`. This shared parser handles `"XLM"`, `"native"`, and `"CODE:ISSUER"` strings. Do **not** introduce a local `parseAsset` in `server.ts`; doing so will break issued-asset batches (USDC, etc.) on the server-submit path.
+
+> **Local server-signing tests:** To test the `/api/batch-submit` or `/api/batch-retry` server-signing path locally, set `ALLOW_SERVER_SIGNING=true` alongside `STELLAR_SECRET_KEY`. Without this flag the routes return 403. The test suite (`tests/batch-submit.test.ts`) sets this flag automatically. See DEPLOYMENT.md for full security guidance before enabling in any deployed environment.
 
 ### Adding Rate Limiting
 
@@ -140,11 +162,19 @@ To work on the Soroban smart contracts, you need:
 
 We use the [Stellar Quickstart](https://github.com/stellar/docker-stellar-quickstart) Docker image to run a local network with Soroban RPC enabled.
 
-1. **Start the local node**:
+1. **Start the full stack** (Stellar node + Next.js app):
    ```bash
-   docker-compose up -d
+   docker compose up -d
    ```
-   This starts a standalone network with Horizon on port `8000` and Soroban RPC on port `8001`.
+   This starts both the Stellar quickstart node and the Next.js app:
+   - Horizon on port `8000`
+   - Soroban RPC on port `8001`
+   - Next.js app on port `3000`
+
+   To run only the Stellar node (e.g. during active development with `npm run dev`):
+   ```bash
+   docker compose up -d stellar
+   ```
 
    The `stellar/quickstart` image is pinned to a specific release tag in
    `docker-compose.yml` rather than `latest`, so a fresh clone produces the
@@ -287,8 +317,15 @@ const result = await service.submitBatch(payments);
 
 1. **CLI Testing**:
    ```bash
-   STELLAR_SECRET_KEY="..." node cli/index.ts \
-     --input examples/payments.json \
+   # The canonical CLI entry point is cli/index.mjs (the package.json bin target).
+   # Use `bun run cli` or the global `stellar-batch-pay` bin:
+   STELLAR_SECRET_KEY="..." bun run cli submit \
+     examples/payments.json \
+     --network testnet
+
+   # Alternatively invoke the bin directly:
+   STELLAR_SECRET_KEY="..." node cli/index.mjs submit \
+     examples/payments.json \
      --network testnet
    ```
 

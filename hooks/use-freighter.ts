@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
     isConnected as freighterIsConnected,
+    getNetwork,
     requestAccess,
     signTransaction,
 } from "@stellar/freighter-api";
@@ -14,12 +15,16 @@ export interface UseFreighterReturn {
     isConnecting: boolean;
     /** Whether Freighter extension is installed */
     isInstalled: boolean | null;
+    /** Latest Freighter network passphrase, if available */
+    networkPassphrase: string | null;
     /** Last error message */
     error: string | null;
     /** Connect to Freighter and request access */
     connect: () => Promise<void>;
     /** Clear local state (disconnect) */
     disconnect: () => void;
+    /** Refresh the currently selected wallet network */
+    refreshNetwork: () => Promise<void>;
     /** Sign a transaction XDR via Freighter */
     signTx: (
         xdr: string,
@@ -31,6 +36,7 @@ export function useFreighter(): UseFreighterReturn {
     const [publicKey, setPublicKey] = useState<string | null>(null);
     const [isConnecting, setIsConnecting] = useState(false);
     const [isInstalled, setIsInstalled] = useState<boolean | null>(null);
+    const [networkPassphrase, setNetworkPassphrase] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
 
     // Check if Freighter is installed on mount
@@ -56,6 +62,30 @@ export function useFreighter(): UseFreighterReturn {
         };
     }, []);
 
+    const refreshNetwork = useCallback(async () => {
+        try {
+            const result = await getNetwork();
+            if (result.error) {
+                throw new Error(result.error);
+            }
+
+            setNetworkPassphrase(result.networkPassphrase || null);
+        } catch {
+            setNetworkPassphrase(null);
+        }
+    }, []);
+
+    useEffect(() => {
+        const handleFocus = () => {
+            if (publicKey) {
+                void refreshNetwork();
+            }
+        };
+
+        window.addEventListener("focus", handleFocus);
+        return () => window.removeEventListener("focus", handleFocus);
+    }, [publicKey, refreshNetwork]);
+
     const connect = useCallback(async () => {
         setError(null);
         setIsConnecting(true);
@@ -66,6 +96,7 @@ export function useFreighter(): UseFreighterReturn {
                 throw new Error(accessResult.error);
             }
             setPublicKey(accessResult.address);
+            await refreshNetwork();
         } catch (err) {
             const message =
                 err instanceof Error ? err.message : "Failed to connect to Freighter";
@@ -78,6 +109,7 @@ export function useFreighter(): UseFreighterReturn {
 
     const disconnect = useCallback(() => {
         setPublicKey(null);
+        setNetworkPassphrase(null);
         setError(null);
     }, []);
 
@@ -109,9 +141,11 @@ export function useFreighter(): UseFreighterReturn {
         publicKey,
         isConnecting,
         isInstalled,
+        networkPassphrase,
         error,
         connect,
         disconnect,
+        refreshNetwork,
         signTx,
     };
 }
