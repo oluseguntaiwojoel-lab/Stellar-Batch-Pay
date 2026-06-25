@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Wallet } from "lucide-react";
 import { ConnectWalletButton } from "@/components/connect-wallet-button";
 import {
@@ -35,6 +36,16 @@ export function DashboardWalletEmpty({ className }: { className?: string }) {
       </EmptyHeader>
       <EmptyContent>
         <ConnectWalletButton />
+        <p className="mt-3 text-sm text-slate-400">
+          Or go to{" "}
+          <Link
+            href="/dashboard/settings"
+            className="text-emerald-400 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 rounded"
+          >
+            Settings
+          </Link>{" "}
+          to manage your wallet connection.
+        </p>
       </EmptyContent>
     </Empty>
   );
