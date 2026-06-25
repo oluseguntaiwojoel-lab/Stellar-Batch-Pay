@@ -45,7 +45,7 @@ jobs:
 
       - name: Open tracking issue on scheduled failure
         if: failure() && github.event_name == 'schedule'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const title = `Security audit failed on ${new Date().toISOString().slice(0, 10)}`;
