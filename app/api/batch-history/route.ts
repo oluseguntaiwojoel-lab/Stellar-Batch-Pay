@@ -11,6 +11,8 @@
  *   search    – substring match on jobId, payments JSON, or result JSON
  *   from      – ISO timestamp; include jobs with createdAt >= from
  *   to        – ISO timestamp; include jobs with createdAt <= to
+ *   sort      – column to sort by: createdAt (default), updatedAt, status
+ *   order     – sort direction: desc (default) or asc
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -39,6 +41,8 @@ export async function GET(request: NextRequest) {
   const search     = searchParams.get("search")?.trim() || undefined;
   const from       = parseIsoTimestamp(searchParams.get("from"));
   const to         = parseIsoTimestamp(searchParams.get("to"));
+  const sort       = searchParams.get("sort") as "createdAt" | "updatedAt" | "status" | null;
+  const order      = searchParams.get("order") as "asc" | "desc" | null;
 
   if (!publicKey || !StrKey.isValidEd25519PublicKey(publicKey)) {
     return NextResponse.json(
@@ -53,7 +57,7 @@ export async function GET(request: NextRequest) {
     rawNetwork === "testnet" || rawNetwork === "mainnet" ? rawNetwork : undefined;
 
   try {
-    const filters = { status, network, publicKey, search, from, to };
+    const filters = { status, network, publicKey, search, from, to, sort: sort ?? undefined, order: order ?? undefined };
 
     const [jobs, total] = [
       getAllJobs({ limit, offset, ...filters }),

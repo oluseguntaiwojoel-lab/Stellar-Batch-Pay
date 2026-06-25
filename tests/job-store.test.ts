@@ -246,4 +246,22 @@ describe("Job Store — getAllJobs / countJobs", () => {
     const matches = getAllJobs({ from: futureFrom, publicKey: OWNER_PUBLIC_KEY });
     expect(matches.some((job) => job.jobId === jobId)).toBe(false);
   });
+
+  test("sort by status asc returns jobs ordered by status (#606)", () => {
+    createJob(samplePayments, "testnet", OWNER_PUBLIC_KEY);
+    const jobs = getAllJobs({ sort: "status", order: "asc" });
+    for (let i = 1; i < jobs.length; i++) {
+      expect(jobs[i - 1].status.localeCompare(jobs[i].status)).toBeLessThanOrEqual(0);
+    }
+  });
+
+  test("sort by updatedAt desc returns jobs ordered by updatedAt descending (#606)", () => {
+    createJob(samplePayments, "testnet", OWNER_PUBLIC_KEY);
+    const jobs = getAllJobs({ sort: "updatedAt", order: "desc" });
+    for (let i = 1; i < jobs.length; i++) {
+      expect(new Date(jobs[i - 1].updatedAt).getTime()).toBeGreaterThanOrEqual(
+        new Date(jobs[i].updatedAt).getTime(),
+      );
+    }
+  });
 });

@@ -7,6 +7,7 @@ import {
   xdr,
   Address,
   nativeToScVal,
+  StrKey,
 } from "stellar-sdk";
 import type { PaymentInstruction, Network } from "./types";
 import { acquireGuard } from "./reentrancy-guard";
@@ -38,22 +39,68 @@ function amountVecToScVal(amounts: string[]): xdr.ScVal {
 }
 
 /**
+ * SAC (Stellar Asset Contract) registry for common assets per network.
+ * Maps classic CODE:ISSUER → contract address.
+ */
+const SAC_REGISTRY: Record<Network, Record<string, string>> = {
+  testnet: {
+    "USDC:GBBD47UZM2HN7D7XZIZVG4KVAUC36THN5BES6RMNNOK5TUNXAUCVMAKER":
+      "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
+    "EURC:GBBD47UZM2HN7D7XZIZVG4KVAUC36THN5BES6RMNNOK5TUNXAUCVMAKER":
+      "CDVQFCBEBFZ5QPASZ3FRX4K7S2D3JYZ37QRPAAVKBNN5ZPOLMVBPLX7A",
+  },
+  mainnet: {
+    "USDC:GA5ZSEJYB37JRC5AVCKA5M5XTNECMHCGFAJHHHH6R2C5I5SG5C4KFJU2":
+      "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
+    "EURC:GA5ZSEJYB37JRC5AVCKA5M5XTNECMHCGFAJHHHH6R2C5I5SG5C4KFJU2":
+      "CDVQFCBEBFZ5QPASZ3FRX4K7S2D3JYZ37QRPAAVKBNN5ZPOLMVBPLX7A",
+  },
+  futurenet: {},
+};
+
+/**
  * Convert asset strings to token addresses.
- * Handles both 'XLM' (native) and 'CODE:ISSUER' (issued assets).
+ * Handles 'XLM' (native), C... SAC addresses (passthrough), and 'CODE:ISSUER' (lookup via SAC registry).
+ * Throws a clear error for unknown or unresolvable asset strings.
  */
 function assetToTokenAddress(asset: string, network: Network): string {
+  // Native XLM wrapped address depends on network
   if (asset === "XLM") {
-    // Native XLM wrapped address depends on network
     switch (network) {
       case "testnet":
-        return "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"; // testnet
+        return "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC";
       case "mainnet":
         return "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA";
       case "futurenet":
-        return "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"; // futurenet (same as testnet)
+        return "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC";
     }
   }
-  return asset.split(":")[1]; // Extract issuer from 'CODE:ISSUER'
+
+  // Pass through valid C... SAC contract addresses unchanged
+  if (StrKey.isValidContract(asset)) {
+    return asset;
+  }
+
+  // For CODE:ISSUER format, look up SAC registry or return issuer as fallback
+  const colonIndex = asset.indexOf(":");
+  if (colonIndex > 0) {
+    const code = asset.slice(0, colonIndex);
+    const issuer = asset.slice(colonIndex + 1);
+
+    // Check SAC registry first
+    const registry = SAC_REGISTRY[network] ?? {};
+    const contractId = registry[asset];
+    if (contractId) return contractId;
+
+    // Fallback: return issuer address (legacy behavior for non-SAC assets)
+    if (issuer && StrKey.isValidEd25519PublicKey(issuer)) {
+      return issuer;
+    }
+  }
+
+  throw new Error(
+    `Unrecognised asset format: "${asset}". Expected "XLM", a valid C... SAC contract address, or "CODE:ISSUER".`,
+  );
 }
 
 function amountToScVal(amount: string): xdr.ScVal {

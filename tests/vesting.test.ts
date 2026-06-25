@@ -156,6 +156,48 @@ describe('buildDepositTransaction (#364)', () => {
     expect(empty.switch()).toBe(xdr.ScValType.scvString());
   });
 
+  test('passes through C... SAC contract addresses unchanged (#611)', async () => {
+    const { buildDepositTransaction } = await import('../lib/stellar/vesting');
+    const sender = Keypair.random().publicKey();
+    const sacAddress = 'CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75';
+    const payments = [
+      payment(Keypair.random().publicKey(), '10', sacAddress),
+    ];
+    await expect(
+      buildDepositTransaction(
+        VALID_CONTRACT_ID,
+        payments,
+        1_700_000_000,
+        1_800_000_000,
+        86_400,
+        86_400,
+        'testnet',
+        sender,
+      ),
+    ).resolves.toBeDefined();
+  });
+
+  test('resolves classic USDC:ISSUER to testnet SAC address via registry (#611)', async () => {
+    const { buildDepositTransaction } = await import('../lib/stellar/vesting');
+    const sender = Keypair.random().publicKey();
+    const usdcAsset = 'USDC:GBBD47UZM2HN7D7XZIZVG4KVAUC36THN5BES6RMNNOK5TUNXAUCVMAKER';
+    const payments = [
+      payment(Keypair.random().publicKey(), '25', usdcAsset),
+    ];
+    await expect(
+      buildDepositTransaction(
+        VALID_CONTRACT_ID,
+        payments,
+        1_700_000_000,
+        1_800_000_000,
+        86_400,
+        86_400,
+        'testnet',
+        sender,
+      ),
+    ).resolves.toBeDefined();
+  });
+
   test('rejects an invalid network at the type boundary', async () => {
     const { buildDepositTransaction } = await import('../lib/stellar/vesting');
     const sender = Keypair.random().publicKey();

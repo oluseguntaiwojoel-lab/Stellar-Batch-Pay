@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
-import { ChevronDown, ChevronRight, Loader2 } from "lucide-react"
+import { ChevronDown, ChevronUp, ChevronRight, Loader2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useWallet } from "@/contexts/WalletContext"
@@ -68,6 +68,8 @@ async function fetchHistory(params: {
   networkFilter?: string
   searchFilter?: string
   fromFilter?: string
+  sort?: string
+  order?: string
 }): Promise<{
   items: HistoricalBatch[]
   pagination: { totalPages: number; total: number }
@@ -81,6 +83,8 @@ async function fetchHistory(params: {
   if (params.networkFilter) urlParams.set("network", params.networkFilter)
   if (params.searchFilter?.trim()) urlParams.set("search", params.searchFilter.trim())
   if (params.fromFilter) urlParams.set("from", params.fromFilter)
+  if (params.sort) urlParams.set("sort", params.sort)
+  if (params.order) urlParams.set("order", params.order)
 
   const res = await fetch(`/api/batch-history?${urlParams.toString()}`)
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -102,6 +106,19 @@ export function HistoryTable({
   const router = useRouter()
   const { publicKey } = useWallet()
   const [debouncedSearch, setDebouncedSearch] = useState(searchFilter ?? "")
+  const [sortColumn, setSortColumn] = useState<"createdAt" | "updatedAt" | "status">("createdAt")
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc")
+
+  const toggleSort = useCallback((column: "createdAt" | "updatedAt" | "status") => {
+    setSortColumn((prev) => {
+      if (prev === column) {
+        setSortOrder((o) => (o === "asc" ? "desc" : "asc"))
+        return prev
+      }
+      setSortOrder("desc")
+      return column
+    })
+  }, [])
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(searchFilter ?? ""), 300)
@@ -109,8 +126,8 @@ export function HistoryTable({
   }, [searchFilter])
 
   const queryKey = useMemo(
-    () => ["batch-history", publicKey, page, limit, statusFilter, networkFilter, debouncedSearch, fromFilter] as const,
-    [publicKey, page, limit, statusFilter, networkFilter, debouncedSearch, fromFilter],
+    () => ["batch-history", publicKey, page, limit, statusFilter, networkFilter, debouncedSearch, fromFilter, sortColumn, sortOrder] as const,
+    [publicKey, page, limit, statusFilter, networkFilter, debouncedSearch, fromFilter, sortColumn, sortOrder],
   )
 
   const { data: result, isLoading, error } = useQuery({
@@ -124,6 +141,8 @@ export function HistoryTable({
         networkFilter,
         searchFilter: debouncedSearch,
         fromFilter,
+        sort: sortColumn,
+        order: sortOrder,
       }),
     enabled: !!publicKey && !data,
     staleTime: 30 * 1000,
@@ -183,24 +202,28 @@ export function HistoryTable({
           <thead>
             <tr className="text-xs font-semibold text-gray-500 border-b border-[#1F2937]">
               <th className="pb-4 px-4 whitespace-nowrap">
-                <div className="flex items-center gap-1 cursor-pointer hover:text-gray-300">
-                  Batch ID <ChevronDown className="h-3 w-3" />
+                <div className="flex items-center gap-1">
+                  Batch ID
                 </div>
               </th>
               <th className="pb-4 px-4 whitespace-nowrap">
-                <div className="flex items-center gap-1 cursor-pointer hover:text-gray-300">
-                  Date Submitted <ChevronDown className="h-3 w-3" />
+                <div className="flex items-center gap-1 cursor-pointer hover:text-gray-300" onClick={() => toggleSort("createdAt")}>
+                  Date Submitted {sortColumn === "createdAt" ? (sortOrder === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />) : <ChevronDown className="h-3 w-3 opacity-30" />}
                 </div>
               </th>
               <th className="pb-4 px-4 whitespace-nowrap">Network</th>
               <th className="pb-4 px-4 whitespace-nowrap">Recipients</th>
               <th className="pb-4 px-4 whitespace-nowrap">
-                <div className="flex items-center gap-1 cursor-pointer hover:text-gray-300">
-                  Total Amount <ChevronDown className="h-3 w-3" />
+                <div className="flex items-center gap-1">
+                  Total Amount
                 </div>
               </th>
               <th className="pb-4 px-4 whitespace-nowrap">Transactions</th>
-              <th className="pb-4 px-4 whitespace-nowrap">Status</th>
+              <th className="pb-4 px-4 whitespace-nowrap">
+                <div className="flex items-center gap-1 cursor-pointer hover:text-gray-300" onClick={() => toggleSort("status")}>
+                  Status {sortColumn === "status" ? (sortOrder === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />) : <ChevronDown className="h-3 w-3 opacity-30" />}
+                </div>
+              </th>
               <th className="pb-4 px-4 text-right whitespace-nowrap">Action</th>
             </tr>
           </thead>

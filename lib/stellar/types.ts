@@ -98,6 +98,8 @@ export interface BuildBatchConfig {
 export interface BatchMetaEntry {
   ops: number;
   estimatedBytes: number;
+  /** Explicit byte size alias for clarity in API responses (#612). Same as estimatedBytes. */
+  byteSize: number;
 }
 
 /** Result from the batch-build endpoint (unsigned XDRs) */
@@ -107,6 +109,8 @@ export interface BuildBatchResult {
   batchMeta?: BatchMetaEntry[];
   network: Network;
   publicKey: string;
+  /** The Stellar network max transaction size constant (100KB) for client-side progress bars (#612). */
+  maxTransactionBytes?: number;
 }
 
 /** Vesting data structure matching the smart contract */

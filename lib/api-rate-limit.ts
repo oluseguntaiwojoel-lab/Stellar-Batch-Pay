@@ -4,7 +4,7 @@ import path from "path";
 import crypto from "crypto";
 
 type Tier = "free" | "pro" | "enterprise";
-type EndpointKey = "batch-build" | "batch-submit" | "batch-submit-signed" | "webhook-register" | "tx-status" | "dashboard-metrics";
+type EndpointKey = "batch-build" | "batch-submit" | "batch-submit-signed" | "webhook-register" | "tx-status" | "dashboard-metrics" | "batch-status" | "batch-events" | "health";
 
 type EndpointLimit = {
   free: number;
@@ -82,6 +82,9 @@ const DEFAULT_LIMITS: Record<EndpointKey, EndpointLimit> = {
   "webhook-register": { free: 3, pro: 10, enterprise: 30, windowMs: 60_000 },
   "tx-status": { free: 30, pro: 100, enterprise: 300, windowMs: 60_000 },
   "dashboard-metrics": { free: 20, pro: 60, enterprise: 180, windowMs: 60_000 },
+  "batch-status": { free: 60, pro: 200, enterprise: 600, windowMs: 60_000 },
+  "batch-events": { free: 10, pro: 30, enterprise: 90, windowMs: 60_000 },
+  "health": { free: 30, pro: 100, enterprise: 300, windowMs: 60_000 },
 };
 
 const endpointLimits: Record<EndpointKey, EndpointLimit> = {
@@ -97,6 +100,9 @@ const endpointLimits: Record<EndpointKey, EndpointLimit> = {
   ),
   "tx-status": tunedLimit("tx-status", DEFAULT_LIMITS["tx-status"]),
   "dashboard-metrics": tunedLimit("dashboard-metrics", DEFAULT_LIMITS["dashboard-metrics"]),
+  "batch-status": tunedLimit("batch-status", DEFAULT_LIMITS["batch-status"]),
+  "batch-events": tunedLimit("batch-events", DEFAULT_LIMITS["batch-events"]),
+  "health": tunedLimit("health", DEFAULT_LIMITS["health"]),
 };
 
 const apiKeyTierMap: Record<string, Tier> = (() => {

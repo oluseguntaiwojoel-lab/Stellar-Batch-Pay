@@ -23,6 +23,7 @@ import { horizonUrl } from "@/lib/stellar/network-config";
 import {
   createBatches,
   estimateBatchTransactionSize,
+  STELLAR_TRANSACTION_SIZE_LIMIT_BYTES,
 } from "@/lib/stellar/batcher";
 import { parseAsset } from "@/lib/stellar/utils";
 import {
@@ -131,14 +132,18 @@ export async function POST(request: NextRequest) {
       server,
     });
 
-    const batchMeta = batches.map((batch) => ({
-      ops: batch.payments.length,
-      estimatedBytes: estimateBatchTransactionSize(
+    const batchMeta = batches.map((batch) => {
+      const estimatedBytes = estimateBatchTransactionSize(
         batch.payments,
         network,
         dynamicFee,
-      ),
-    }));
+      );
+      return {
+        ops: batch.payments.length,
+        estimatedBytes,
+        byteSize: estimatedBytes,
+      };
+    });
 
     const networkPassphrase =
       network === "testnet" ? Networks.TESTNET : Networks.PUBLIC;
@@ -223,6 +228,7 @@ export async function POST(request: NextRequest) {
       network,
       publicKey,
       estimatedFees: ((dynamicFee * payments.length) / 10_000_000).toFixed(7) + " XLM",
+      maxTransactionBytes: STELLAR_TRANSACTION_SIZE_LIMIT_BYTES,
     }), rate);
   } catch (error) {
     console.error("Batch build error:", error);

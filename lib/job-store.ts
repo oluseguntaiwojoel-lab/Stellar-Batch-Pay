@@ -378,7 +378,13 @@ export interface JobQueryFilters {
   from?: string;
   /** ISO timestamp — include jobs with createdAt <= to. */
   to?: string;
+  /** Column to sort by (whitelisted: createdAt, updatedAt, status). Default: createdAt. */
+  sort?: "createdAt" | "updatedAt" | "status";
+  /** Sort direction. Default: desc. */
+  order?: "asc" | "desc";
 }
+
+const SORT_COLUMNS = new Set(["createdAt", "updatedAt", "status"]);
 
 function buildJobQueryFilters(opts?: JobQueryFilters): {
   where: string;
@@ -422,6 +428,7 @@ function buildJobQueryFilters(opts?: JobQueryFilters): {
 /**
  * Return all jobs ordered by creation time descending (newest first).
  * Accepts optional filters for the batch history endpoint.
+ * Supports sort and order params with whitelist validation (#606).
  */
 export function getAllJobs(opts?: JobQueryFilters & {
   limit?: number;
@@ -432,9 +439,12 @@ export function getAllJobs(opts?: JobQueryFilters & {
   const limit = opts?.limit ?? 50;
   const offset = opts?.offset ?? 0;
 
+  const sortColumn = opts?.sort && SORT_COLUMNS.has(opts.sort) ? opts.sort : "createdAt";
+  const sortOrder = opts?.order === "asc" ? "ASC" : "DESC";
+
   const rows = db
     .prepare(
-      `SELECT * FROM jobs ${where} ORDER BY createdAt DESC LIMIT ? OFFSET ?`,
+      `SELECT * FROM jobs ${where} ORDER BY ${sortColumn} ${sortOrder} LIMIT ? OFFSET ?`,
     )
     .all(...params, limit, offset) as JobRow[];
 
