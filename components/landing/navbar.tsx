@@ -35,7 +35,7 @@ export function Navbar() {
               Features
             </Link>
             <Link
-              href="/dashboard#documentation"
+              href="/docs"
               className="text-sm font-light text-[#E5E7EB] hover:text-[#E5E7EB]/90 transition-colors"
             >
               Documentation
@@ -117,7 +117,7 @@ export function Navbar() {
               Features
             </Link>
             <Link
-              href="/dashboard#documentation"
+              href="/docs"
               className="px-2 py-2 rounded text-[#E5E7EB] hover:bg-secondary/10"
             >
               Documentation

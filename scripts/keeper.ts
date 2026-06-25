@@ -146,6 +146,9 @@ async function main() {
         keeperKeypair,
         state,
       );
+      // Reload account sequence after each recipient to prevent TX_BAD_SEQ
+      // when processing multiple recipients sequentially
+      await server.getAccount(keeperKeypair.publicKey());
     }
 
     await saveState(state);
@@ -288,7 +291,7 @@ async function maintainInstance(
   keeperKeypair: Keypair,
 ) {
   console.log("Checking contract instance TTL...");
-  const sourceAccount = await server.getAccount(keeperKeypair.publicKey());
+  let sourceAccount = await server.getAccount(keeperKeypair.publicKey());
 
   const tx = new TransactionBuilder(
     new Account(sourceAccount.accountId(), sourceAccount.sequenceNumber()),

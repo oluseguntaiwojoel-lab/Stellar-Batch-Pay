@@ -61,6 +61,7 @@ export default function HistoryPage() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [loadedBatches, setLoadedBatches] = useState<HistoricalBatch[]>([]);
+  const [aggregateMetrics, setAggregateMetrics] = useState<{ totalBatches: number; totalPayments: number; successRate: string; totalVolume: string } | undefined>(undefined);
 
   useEffect(() => {
     setFilters(parsedFilters);
@@ -83,7 +84,12 @@ export default function HistoryPage() {
     setLoadedBatches(rows);
   }, []);
 
-  const metricsData = computeMetrics(loadedBatches);
+  // Use aggregate metrics from API (computed across all filtered results)
+  const handleAggregateMetricsLoad = useCallback((metrics: { totalBatches: number; totalPayments: number; successRate: string; totalVolume: string }) => {
+    setAggregateMetrics(metrics);
+  }, []);
+
+  const metricsData = aggregateMetrics;
 
   return (
     <MotionSafe {...pageEnter} className="space-y-8">
@@ -117,6 +123,7 @@ export default function HistoryPage() {
             fromFilter={dateRangeToFrom(filters.dateRange)}
             onPaginationLoad={handlePaginationLoad}
             onRowsLoad={handleRowsLoad}
+            onAggregateMetricsLoad={handleAggregateMetricsLoad}
           />
           <div className="px-4 pb-4 sm:px-0 sm:pb-0">
             <Pagination

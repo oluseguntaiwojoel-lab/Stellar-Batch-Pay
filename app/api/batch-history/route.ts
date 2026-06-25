@@ -64,6 +64,27 @@ export async function GET(request: NextRequest) {
       countJobs(filters),
     ];
 
+    // Compute aggregate metrics across all filtered results (not just current page)
+    let aggregateMetrics = null;
+    if (total > 0) {
+      const allJobs = getAllJobs({ limit: total, offset: 0, ...filters });
+      const totalBatches = allJobs.length;
+      const totalPayments = allJobs.reduce((s, j) => s + j.payments.length, 0);
+      const totalVolume = allJobs.reduce((s, j) => s + parseFloat(j.result?.totalAmount ?? "0"), 0);
+      const successful = allJobs.filter(
+        (j) => j.result?.summary?.failed === 0 && j.status === "completed"
+      ).length;
+      const completed = allJobs.filter((j) => j.status === "completed").length;
+      const successRate = completed > 0 ? ((successful / completed) * 100).toFixed(1) + "%" : "0.0%";
+
+      aggregateMetrics = {
+        totalBatches,
+        totalPayments,
+        successRate,
+        totalVolume: `${totalVolume.toFixed(2)} XLM`,
+      };
+    }
+
     // Strip the full payments array from the list response to keep payloads small.
     // Callers that need the full payment list should use GET /api/batch-status/:jobId.
     const items = jobs.map((j) => ({
@@ -82,6 +103,7 @@ export async function GET(request: NextRequest) {
 
     return safeJsonResponse({
       items,
+      aggregateMetrics,
       pagination: {
         page,
         limit,

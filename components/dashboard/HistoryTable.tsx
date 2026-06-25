@@ -32,6 +32,7 @@ interface HistoryTableProps {
   fromFilter?: string
   onPaginationLoad?: (pagination: { totalPages: number; total: number }) => void
   onRowsLoad?: (rows: HistoricalBatch[]) => void
+  onAggregateMetricsLoad?: (metrics: { totalBatches: number; totalPayments: number; successRate: string; totalVolume: string }) => void
 }
 
 function formatDate(iso: string): string {
@@ -73,6 +74,12 @@ async function fetchHistory(params: {
 }): Promise<{
   items: HistoricalBatch[]
   pagination: { totalPages: number; total: number }
+  aggregateMetrics?: {
+    totalBatches: number
+    totalPayments: number
+    successRate: string
+    totalVolume: string
+  }
 }> {
   const urlParams = new URLSearchParams({
     page: String(params.page),
@@ -102,6 +109,7 @@ export function HistoryTable({
   fromFilter,
   onPaginationLoad,
   onRowsLoad,
+  onAggregateMetricsLoad,
 }: HistoryTableProps) {
   const router = useRouter()
   const { publicKey } = useWallet()
@@ -163,6 +171,12 @@ export function HistoryTable({
       onRowsLoad?.(result.items)
     }
   }, [result?.items, onRowsLoad])
+
+  useEffect(() => {
+    if (result?.aggregateMetrics) {
+      onAggregateMetricsLoad?.(result.aggregateMetrics)
+    }
+  }, [result?.aggregateMetrics, onAggregateMetricsLoad])
 
   const openBatchDetail = useCallback(
     (jobId: string) => router.push(`/dashboard/history/${jobId}`),
